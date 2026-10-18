@@ -13,9 +13,9 @@ def main():
         while True:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[{now}] SENTINEL is running")
-            honey.check()
             time.sleep(3)
     except KeyboardInterrupt:
+        honey.stop()
         log_event("system", "SENTINEL stopped by user")
         print("\nSENTINEL stopped.")
 if __name__ == "__main__":

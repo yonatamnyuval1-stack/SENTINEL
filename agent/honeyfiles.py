@@ -1,5 +1,7 @@
 from pathlib import Path
 from event import log_event
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 DECOY_ROOT = Path.home() / "Documents" / "WorkArchive_2023"
 FILLER_FILES = {
     "meeting_notes_q3.txt": (
@@ -15,7 +17,6 @@ FILLER_FILES = {
         "Northwind - billing@northwind.example\n"
     ),
 }
-
 TRAP_FILES = {
     "credentials_export.csv": (
         "service,username,password,note\n"
@@ -31,8 +32,47 @@ TRAP_FILES = {
     ),
 }
 
+class TrapEventHandler(FileSystemEventHandler):
+    def __init__(self, trap_paths):
+        super().__init__()
+        self.trap_paths = {str(Path(p).resolve()) for p in trap_paths}
+
+    def _is_trap(self,path):
+        if not path:
+            return False
+        return str(Path(path).resolve()) in self.trap_paths
+    def on_modified(self, event):
+        if event.is_directory:
+            return
+        if self._is_trap(event.src_path):
+            log_event(
+                "alert",
+                "Trap file was modified",
+                path=event.src_path,
+            )
+    def on_deleted(self, event):
+        if event.is_directory:
+            return
+        if self._is_trap(event.src_path):
+            log_event(
+                "alert",
+                "Trap file was deleted or moved",
+                path=event.src_path,
+            )
+    def on_moved(self, event):
+        if event.is_directory:
+            return
+        if self._is_trap(event.src_path) or self._is_trap(event.dest_path):
+            log_event(
+                "alert",
+                "Trap file was moved/renamed",
+                path=event.src_path,
+                dest=getattr(event, "dest_path", None),
+            )
+
 class HoneyfileGuard:
     def __init__(self):
+        self.observer = None
         self.trap_states = {}
 
     def setup(self):
@@ -51,47 +91,24 @@ class HoneyfileGuard:
                 "mtime": stat.st_mtime,
                 "size": stat.st_size,
             }
-
         log_event(
             "system",
             "Honeyfile decoy archive ready",
             path=str(DECOY_ROOT),
             traps=len(TRAP_FILES),
         )
+        trap_paths = [str(DECOY_ROOT / name) for name in TRAP_FILES]
+        handler = TrapEventHandler(trap_paths)
+        self.observer = Observer()
+        self.observer.schedule(handler, str(DECOY_ROOT), recursive=False)
+        self.observer.start()
+        log_event("system", "Honeyfile watcher started", path=str(DECOY_ROOT))
 
     def check(self):
-        alerted = False
-        for path_str, state in list(self.trap_states.items()):
-            path = Path(path_str)
-            if not path.exists():
-                log_event(
-                    "alert",
-                    "Trap file was deleted or moved",
-                    path=path_str,
-                )
-                name = path.name
-                content = TRAP_FILES.get(name)
-                if content is not None:
-                    path.write_text(content, encoding="utf-8")
-                    stat = path.stat()
-                    self.trap_states[path_str] = {
-                        "mtime": stat.st_mtime,
-                        "size": stat.st_size,
-                    }
-                alerted = True
-                continue
-            stat = path.stat()
-            if stat.st_mtime != state["mtime"] or stat.st_size != state["size"]:
-                log_event(
-                    "alert",
-                    "Trap file was touched or modified",
-                    path=path_str,
-                    old_size=state["size"],
-                    new_size=stat.st_size,
-                )
-                self.trap_states[path_str] = {
-                    "mtime": stat.st_mtime,
-                    "size": stat.st_size,
-                }
-                alerted = True
-        return alerted
+        return False
+
+    def stop(self):
+        if self.observer is not None:
+            self.observer.stop()
+            self.observer.join(timeout=5)
+            self.observer = None
