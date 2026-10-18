@@ -14,7 +14,6 @@ def main():
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[{now}] SENTINEL is running")
             honey.check()
-            log_event("heartbeat", "SENTINEL is alive")
             time.sleep(3)
     except KeyboardInterrupt:
         log_event("system", "SENTINEL stopped by user")
