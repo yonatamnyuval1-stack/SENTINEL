@@ -41,6 +41,7 @@ class TrapEventHandler(FileSystemEventHandler):
         if not path:
             return False
         return str(Path(path).resolve()) in self.trap_paths
+        
     def on_modified(self, event):
         if event.is_directory:
             return
@@ -50,6 +51,7 @@ class TrapEventHandler(FileSystemEventHandler):
                 "Trap file was modified",
                 path=event.src_path,
             )
+
     def on_deleted(self, event):
         if event.is_directory:
             return
@@ -59,6 +61,7 @@ class TrapEventHandler(FileSystemEventHandler):
                 "Trap file was deleted or moved",
                 path=event.src_path,
             )
+
     def on_moved(self, event):
         if event.is_directory:
             return

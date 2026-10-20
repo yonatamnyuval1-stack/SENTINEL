@@ -1,66 +1,44 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>SENTINEL</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <span class="mark">S</span>
-      <div>
-        <h1>SENTINEL</h1>
-        <p class="tag">Local host defense</p>
+  <div class="layout">
+    <aside class="side">
+      <div class="side-title">SENTINEL</div>
+      <nav class="side-nav">
+        <button type="button" class="nav-item is-on" data-view="logs">Logs</button>
+        <button type="button" class="nav-item" data-view="heartbeats">Heartbeats</button>
+      </nav>
+    </aside>
+    <section class="main">
+      <div class="main-bar">
+        <h1 id="view-title">Logs</h1>
+        <span id="status-line">loading…</span>
       </div>
-    </div>
-    <div class="meta" id="meta">Connecting…</div>
-  </header>
-  <main>
-    <section class="strip" aria-label="Summary">
-      <div class="stat">
-        <span class="label">Alerts</span>
-        <strong id="count-alert">0</strong>
-      </div>
-      <div class="stat">
-        <span class="label">System</span>
-        <strong id="count-system">0</strong>
-      </div>
-      <div class="stat">
-        <span class="label">Loaded</span>
-        <strong id="count-total">0</strong>
-      </div>
-    </section>
-    <section class="panel">
-      <div class="panel-head">
-        <h2>Event stream</h2>
-        <label class="filter">
-          Show
-          <select id="filter-kind">
-            <option value="all">All</option>
-            <option value="alert">Alerts</option>
-            <option value="system">System</option>
-          </select>
-        </label>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Kind</th>
-              <th>Message</th>
-              <th>Detail</th>
-            </tr>
-          </thead>
-          <tbody id="events-body">
-            <tr class="empty"><td colspan="4">No events yet. Start the agent.</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-  </main>
+
+      <table class="log-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Kind</th>
+            <th>Massage</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr>
+            <td colspan="4" class="empty">No rows yet.</td>
+          </tr>
+        </tbody>
+     </table>
+     </section>        
+
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>
