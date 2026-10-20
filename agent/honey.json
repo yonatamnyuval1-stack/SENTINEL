@@ -1,0 +1,16 @@
+{
+  "decoy_root": "{home}/Documents/WorkArchive_2023",
+  "fillers": {
+    "meeting_notes_q3.txt": "Q3 sync - 14 Sep\n- move budget review to Friday\n- wait for finance export before payroll run\n- Sarah owns vendor renewals\n",
+    "readme_archive.txt": "Working files from 2023.\nKeep until the 2025 audit folder is closed.\nDo not upload to shared drives.\n",
+    "vendor_contacts.txt": "Acme Supplies\noffice@acme.example\n+1-555-0100\n\nNorthwind Traders\nbilling@northwind.example\n",
+    "onboarding_checklist.txt": "New hire setup\n[ ] laptop image\n[ ] email account\n[ ] VPN profile\n[ ] badge photo\n",
+    "invoice_draft_oct.txt": "Invoice draft - not sent\nClient: Brightline Studio\nAmount: 4200\nDue: end of month\n"
+  },
+  "traps": {
+    "credentials_export.csv": "service,username,password,note\nemail,admin@company.example,ChangeMe2023!,legacy\nvpn,j.smith,Summer2023!,personal-backup\npayroll,finance_bot,P@ssw0rd!,do-not-share\n",
+    "salary_backup.csv": "name,role,monthly\nAlex,Engineer,12000\nSam,Manager,15000\nJordan,Intern,4000\n",
+    "wifi_guest_passwords.txt": "Office guest Wi-Fi\nSSID: Company-Guest\nPassword: Welcome2023!\n\nWarehouse AP\nSSID: StockFloor\nPassword: Boxes#9911\n",
+    "bank_transfer_template.csv": "date,to,iban,amount,ref\n2023-11-02,Northwind,GB29NWBK60161331926819,1850.00,INV-4412\n2023-11-09,Acme Supplies,DE89370400440532013000,920.50,PO-7781\n"
+  }
+}

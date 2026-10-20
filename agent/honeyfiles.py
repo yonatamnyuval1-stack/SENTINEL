@@ -1,47 +1,39 @@
 from pathlib import Path
+import json
 from event import log_event
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-DECOY_ROOT = Path.home() / "Documents" / "WorkArchive_2023"
-FILLER_FILES = {
-    "meeting_notes_q3.txt": (
-        "Q3 sync\n"
-        "- budget review moved to Friday\n"
-        "- wait for finance export before payroll\n"
-    ),
-    "readme_archive.txt": (
-        "Old work files. Keep until 2025 audit closes.\n"
-    ),
-    "vendor_contacts.txt": (
-        "Acme Supplies - office@acme.example - +1-555-0100\n"
-        "Northwind - billing@northwind.example\n"
-    ),
-}
-TRAP_FILES = {
-    "credentials_export.csv": (
-        "service,username,password,note\n"
-        "email,admin@company.example,ChangeMe2023!,legacy\n"
-        "vpn,j.smith,Summer2023!,personal-backup\n"
-        "payroll,finance_bot,P@ssw0rd!,do-not-share\n"
-    ),
-    "salary_backup.csv": (
-        "name,role,monthly\n"
-        "Alex,Engineer,12000\n"
-        "Sam,Manager,15000\n"
-        "Jordan,Intern,4000\n"
-    ),
-}
+CONFIG_PATH = Path(__file__).resolve().parent / "honey.json"
+
+def load_config():
+    raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    root = raw["decoy_root"].replace("{home}", str(Path.home()))
+    return {
+        "decoy_root": Path(root),
+        "fillers": raw.get("fillers", {}),
+        "traps": raw.get("traps", {}),
+    }
 
 class TrapEventHandler(FileSystemEventHandler):
-    def __init__(self, trap_paths):
+    def __init__(self, trap_paths, traps_by_name):
         super().__init__()
         self.trap_paths = {str(Path(p).resolve()) for p in trap_paths}
-
-    def _is_trap(self,path):
+        self.traps_by_name = traps_by_name
+    def _is_trap(self, path):
         if not path:
             return False
         return str(Path(path).resolve()) in self.trap_paths
-        
+
+    def _restore(self,path):
+        path = Path(path)
+        content = self.traps_by_name.get(path.name)
+        if content is None:
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            path.write_text(content, encoding="utf-8")
+            log_event("system", "Trap file restored", path=str(path))
+
     def on_modified(self, event):
         if event.is_directory:
             return
@@ -61,6 +53,7 @@ class TrapEventHandler(FileSystemEventHandler):
                 "Trap file was deleted or moved",
                 path=event.src_path,
             )
+            self._restore(event.src_path)
 
     def on_moved(self, event):
         if event.is_directory:
@@ -72,43 +65,41 @@ class TrapEventHandler(FileSystemEventHandler):
                 path=event.src_path,
                 dest=getattr(event, "dest_path", None),
             )
+            if self._is_trap(event.src_path):
+                self._restore(event.src_path)
 
 class HoneyfileGuard:
     def __init__(self):
         self.observer = None
-        self.trap_states = {}
+        self.config = None
 
     def setup(self):
-        DECOY_ROOT.mkdir(parents=True, exist_ok=True)
-        for name, content in FILLER_FILES.items():
-            path = DECOY_ROOT / name
+        self.config = load_config()
+        decoy_root = self.config["decoy_root"]
+        fillers = self.config["fillers"]
+        traps = self.config["traps"]
+        decoy_root.mkdir(parents=True, exist_ok=True)
+        for name, content in fillers.items():
+            path = decoy_root / name
             if not path.exists():
                 path.write_text(content, encoding="utf-8")
-        for name, content in TRAP_FILES.items():
-            path = DECOY_ROOT / name
+        for name, content in traps.items():
+            path = decoy_root / name
             if not path.exists():
                 path.write_text(content, encoding="utf-8")
                 log_event("system", "Trap file created", path=str(path))
-            stat = path.stat()
-            self.trap_states[str(path)] = {
-                "mtime": stat.st_mtime,
-                "size": stat.st_size,
-            }
         log_event(
             "system",
             "Honeyfile decoy archive ready",
-            path=str(DECOY_ROOT),
-            traps=len(TRAP_FILES),
+            path=str(decoy_root),
+            traps=len(traps),
         )
-        trap_paths = [str(DECOY_ROOT / name) for name in TRAP_FILES]
-        handler = TrapEventHandler(trap_paths)
+        trap_paths = [str(decoy_root / name) for name in traps]
+        handler = TrapEventHandler(trap_paths,traps)
         self.observer = Observer()
-        self.observer.schedule(handler, str(DECOY_ROOT), recursive=False)
+        self.observer.schedule(handler, str(decoy_root), recursive=False)
         self.observer.start()
-        log_event("system", "Honeyfile watcher started", path=str(DECOY_ROOT))
-
-    def check(self):
-        return False
+        log_event("system", "Honeyfile watcher started", path=str(decoy_root))
 
     def stop(self):
         if self.observer is not None:
