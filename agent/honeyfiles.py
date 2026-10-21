@@ -3,6 +3,7 @@ import json
 from event import log_event
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from audit_watch import AuditWatch
 CONFIG_PATH = Path(__file__).resolve().parent / "honey.json"
 
 def load_config():
@@ -72,6 +73,7 @@ class HoneyfileGuard:
     def __init__(self):
         self.observer = None
         self.config = None
+        self.audit = None
 
     def setup(self):
         self.config = load_config()
@@ -100,9 +102,14 @@ class HoneyfileGuard:
         self.observer.schedule(handler, str(decoy_root), recursive=False)
         self.observer.start()
         log_event("system", "Honeyfile watcher started", path=str(decoy_root))
+        self.audit = AuditWatch(trap_paths)
+        self.audit.start()
 
     def stop(self):
         if self.observer is not None:
             self.observer.stop()
             self.observer.join(timeout=5)
             self.observer = None
+        if self.audit is not None:
+            self.audit.stop()
+            self.audit = None
