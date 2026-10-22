@@ -2,9 +2,15 @@ const rows = document.getElementById("rows");
 const statusLine = document.getElementById("status-line");
 const viewTitle = document.getElementById("view-title");
 const navItems = Array.from(document.querySelectorAll(".nav-item"));
-
-let view = "logs"; // logs | heartbeats
+const panelLogs = document.getElementById("panel-logs");
+const panelHoney = document.getElementById("panel-honey");
+const honeyMeta = document.getElementById("honey-meta");
+const honeyTraps = document.getElementById("honey-traps");
+const honeyFillers = document.getElementById("honey-fillers");
+const honeyAlerts = document.getElementById("honey-alerts");
+let view = "logs"; 
 let events = [];
+let honey = null;
 
 function msg(event) {
   return event.message || event.massage || "";
@@ -42,10 +48,102 @@ function visibleEvents() {
   return events.filter((e) => e.kind !== "heartbeat");
 }
 
-function render() {
-  const list = visibleEvents();
-  viewTitle.textContent = view === "heartbeats" ? "Heartbeats" : "Logs";
+function renderFileRows(target, list) {
+  if (!list || !list.length) {
+    target.innerHTML =
+      '<tr><td colspan="3" class="empty">None configured.</td></tr>';
+    return;
+  }
+  target.innerHTML = list
+    .map((item) => {
+      const flag = item.exists
+        ? '<span class="flag-yes">yes</span>'
+        : '<span class="flag-no">missing</span>';
+      return (
+        "<tr>" +
+        "<td>" +
+        esc(item.name) +
+        "</td>" +
+        "<td>" +
+        flag +
+        "</td>" +
+        "<td>" +
+        esc(item.path) +
+        "</td>" +
+        "</tr>"
+      );
+    })
+    .join("");
+}
 
+function whoWhat(event) {
+  const bits = [];
+  if (event.user) bits.push("user=" + event.user);
+  if (event.process) bits.push("process=" + event.process);
+  if (event.access_mask) bits.push("access=" + event.access_mask);
+  if (event.source) bits.push("source=" + event.source);
+  if (event.path) bits.push("path=" + event.path);
+  if (event.dest) bits.push("dest=" + event.dest);
+  return bits.join(" | ") || detail(event);
+}
+
+function renderHoney() {
+  if (!honey || !honey.ok) {
+    honeyMeta.textContent =
+      honey && honey.error ? honey.error : "honey data unavailable";
+    honeyTraps.innerHTML =
+      '<tr><td colspan="3" class="empty">—</td></tr>';
+    honeyFillers.innerHTML =
+      '<tr><td colspan="3" class="empty">—</td></tr>';
+    honeyAlerts.innerHTML =
+      '<tr><td colspan="3" class="empty">—</td></tr>';
+    return;
+  }
+  const trapOk = (honey.traps || []).filter((t) => t.exists).length;
+  const fillOk = (honey.fillers || []).filter((f) => f.exists).length;
+  honeyMeta.textContent =
+    "decoy: " +
+    honey.decoy_root +
+    "\n" +
+    "folder: " +
+    (honey.decoy_exists ? "present" : "missing") +
+    " | traps on disk: " +
+    trapOk +
+    "/" +
+    (honey.traps || []).length +
+    " | fillers on disk: " +
+    fillOk +
+    "/" +
+    (honey.fillers || []).length;
+  renderFileRows(honeyTraps, honey.traps);
+  renderFileRows(honeyFillers, honey.fillers);
+  const alerts = honey.alerts || [];
+  if (!alerts.length) {
+    honeyAlerts.innerHTML =
+      '<tr><td colspan="3" class="empty">No honey alerts yet.</td></tr>';
+    return;
+  }
+  honeyAlerts.innerHTML = alerts
+    .map((event) => {
+      return (
+        '<tr class="row-alert">' +
+        "<td>" +
+        esc(fmtTime(event.time)) +
+        "</td>" +
+        "<td>" +
+        esc(msg(event)) +
+        "</td>" +
+        "<td>" +
+        esc(whoWhat(event)) +
+        "</td>" +
+        "</tr>"
+      );
+    })
+    .join("");
+}
+
+function renderLogs() {
+  const list = visibleEvents();
   if (!list.length) {
     const empty =
       view === "heartbeats"
@@ -55,7 +153,6 @@ function render() {
       '<tr><td colspan="4" class="empty">' + empty + "</td></tr>";
     return;
   }
-
   rows.innerHTML = list
     .map((event) => {
       const kind = event.kind || "other";
@@ -64,7 +161,7 @@ function render() {
         "<tr" +
         cls +
         ">" +
-        '<td>' +
+        "<td>" +
         esc(fmtTime(event.time)) +
         "</td>" +
         "<td>" +
@@ -82,6 +179,23 @@ function render() {
     .join("");
 }
 
+function render() {
+  const titles = {
+    logs: "Logs",
+    heartbeats: "Heartbeats",
+    honey: "Honeyfiles",
+  };
+  viewTitle.textContent = titles[view] || "Logs";
+  const showHoney = view === "honey";
+  panelLogs.classList.toggle("hidden", showHoney);
+  panelHoney.classList.toggle("hidden", !showHoney);
+  if (showHoney) {
+    renderHoney();
+  } else {
+    renderLogs();
+  }
+}
+
 function setView(next) {
   view = next;
   navItems.forEach((btn) => {
@@ -92,22 +206,29 @@ function setView(next) {
 
 async function refresh() {
   try {
-    const res = await fetch("/api/events?limit=500", { cache: "no-store" });
-    const data = await res.json();
+    const [evRes, honeyRes] = await Promise.all([
+      fetch("/api/events?limit=500", { cache: "no-store" }),
+      fetch("/api/honey", { cache: "no-store" }),
+    ]);
+    const data = await evRes.json();
     events = data.events || [];
-    const logsCount = events.filter((e) => e.kind !== "heartbeat").length;
-    const hbCount = events.filter((e) => e.kind === "heartbeat").length;
-    statusLine.textContent =
-      logsCount + " logs, " + hbCount + " heartbeats";
+    honey = await honeyRes.json();
+    if (view === "honey") {
+      const n = (honey && honey.alerts && honey.alerts.length) || 0;
+      statusLine.textContent = n + " honey alerts";
+    } else {
+      const logsCount = events.filter((e) => e.kind !== "heartbeat").length;
+      const hbCount = events.filter((e) => e.kind === "heartbeat").length;
+      statusLine.textContent =
+        logsCount + " logs, " + hbCount + " heartbeats";
+    }
     render();
   } catch (err) {
     statusLine.textContent = "cannot reach server";
   }
 }
-
 navItems.forEach((btn) => {
   btn.addEventListener("click", () => setView(btn.getAttribute("data-view")));
 });
-
 refresh();
 setInterval(refresh, 2000);

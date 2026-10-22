@@ -13,6 +13,7 @@
       <nav class="side-nav">
         <button type="button" class="nav-item is-on" data-view="logs">Logs</button>
         <button type="button" class="nav-item" data-view="heartbeats">Heartbeats</button>
+        <button type="button" class="nav-item" data-view="honey">Honeyfiles</button>
       </nav>
     </aside>
     <section class="main">
@@ -20,7 +21,7 @@
         <h1 id="view-title">Logs</h1>
         <span id="status-line">loading…</span>
       </div>
-
+      <div id="panel-logs">
       <table class="log-table">
         <thead>
           <tr>
@@ -36,8 +37,50 @@
           </tr>
         </tbody>
      </table>
-     </section>        
-
+      </div>
+      <div id="panel-honey" class="hidden">
+        <div class="honey-meta" id="honey-meta">—</div>
+        <h2 class="block-title">Trap files</h2>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>On disk</th>
+              <th>Path</th>
+            </tr>
+          </thead>
+          <tbody id="honey-traps">
+            <tr><td colspan="3" class="empty">No traps.</td></tr>
+          </tbody>
+        </table>
+        <h2 class="block-title">Filler files</h2>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>On disk</th>
+              <th>Path</th>
+            </tr>
+          </thead>
+          <tbody id="honey-fillers">
+            <tr><td colspan="3" class="empty">No fillers.</td></tr>
+          </tbody>
+        </table>
+        <h2 class="block-title">Honey alerts</h2>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Massage</th>
+              <th>Who / what</th>
+            </tr>
+          </thead>
+          <tbody id="honey-alerts">
+            <tr><td colspan="3" class="empty">No honey alerts yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   </div>
   <script src="/app.js"></script>
 </body>

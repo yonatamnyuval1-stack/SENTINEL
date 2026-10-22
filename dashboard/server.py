@@ -5,6 +5,7 @@ from urllib.parse import urlparse, parse_qs
 ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT/ "static"
 EVENTS_FILE = ROOT.parent / "agent" / "data" / "events.jsonl"
+HONEY_JSON = ROOT.parent / "agent" / "honey.json"
 HOST = "127.0.0.1"
 PORT = 8787
 def read_events(limit=200):
@@ -37,6 +38,63 @@ def build_status(events):
         "total": len(events),
         "counts": counts,
     }
+
+def build_honey():
+    if not HONEY_JSON.exists():
+        return {
+            "ok": False,
+            "error": "honey.json missing",
+            "decoy_root": "",
+            "fillers": [],
+            "traps": [],
+            "alerts": [],
+        }
+    raw = json.loads(HONEY_JSON.read_text(encoding="utf-8"))
+    home = str(Path.home())
+    decoy_root = raw.get("decoy_root", "").replace("{home}", home)
+    fillers = sorted(raw.get("fillers", {}).keys())
+    traps = sorted(raw.get("traps", {}).keys())
+    decoy_path = Path(decoy_root)
+    trap_rows = []
+    for name in traps:
+        path = decoy_path / name
+        trap_rows.append({
+            "name": name,
+            "path": str(path),
+            "exists": path.exists(),
+        })
+    filler_rows = []
+    for name in fillers:
+        path = decoy_path / name
+        filler_rows.append({
+            "name": name,
+            "path": str(path),
+            "exists": path.exists(),
+        })
+    honey_alerts = []
+    for event in read_events(limit=800):
+        if event.get("kind") != "alert":
+            continue
+        msg = event.get("message") or event.get("massage") or ""
+        path = str(event.get("path") or "")
+        looks_honey = (
+            "Trap" in msg
+            or event.get("source") == "windows_audit"
+            or (decoy_root and decoy_root.lower() in path.lower())
+        )
+        if not looks_honey:
+            continue
+        honey_alerts.append(event)
+        if len(honey_alerts) >= 40:
+            break
+    return {
+        "ok": True,
+        "decoy_root": decoy_root,
+        "decoy_exists": decoy_path.exists(),
+        "fillers": filler_rows,
+        "traps": trap_rows,
+        "alerts": honey_alerts,
+    }
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -51,6 +109,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/status":
             events = read_events(limit=500)
             return self._json(build_status(events))
+        if parsed.path == "/api/honey":
+            return self._json(build_honey())
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()

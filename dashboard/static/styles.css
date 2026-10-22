@@ -1,7 +1,6 @@
 * {
   box-sizing: border-box;
 }
-
 body{
   margin: 0;
   font-family: Tahoma, "Segoe UI", sans-serif;
@@ -9,12 +8,10 @@ body{
   color: #222;
   background: #fff;
 }
-
 .layout{
   display: flex;
   min-height: 100vh;
 }
-
 .side{
   width: 180px;
   flex-shrink: 0;
@@ -22,18 +19,15 @@ body{
   border-right: 1px solid #bdbdbd;
   padding: 12px 0;
 }
-
 .side-title {
   padding: 0 12px 12px;
   font-size: 14px;
   font-weight: bold;
 }
-
 .side-nav {
   display: flex;
   flex-direction: column;
 }
-
 .nav-item {
   border: 0;
   background: transparent;
@@ -43,7 +37,6 @@ body{
   color: #222;
   cursor: pointer;
 }
-
 .nav-item:hover{
   background: #e4e4e4;
 }
@@ -123,4 +116,31 @@ body{
   .side-nav {
     flex-direction: row;
   }
+}
+.hidden{
+  display: none;
+}
+.block-title{
+  margin: 18px 0 6px;
+  font-size: 13px;
+  font-weight: bold;
+  color: #333;
+}
+.honey-meta{
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  background: #f7f7f7;
+  border: 1px solid #ddd;
+  font-family: consolas, "Courier New", monospace;
+  font-size: 12px;
+  color: #333;
+  white-space: pre-wrap;
+}
+.flag-yes {
+  color: #008855;
+  font-weight: bold;
+}
+.flag-no {
+  color: #8b0000;
+  font-weight: bold;
 }
