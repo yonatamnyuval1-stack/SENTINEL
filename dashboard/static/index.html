@@ -14,6 +14,7 @@
         <button type="button" class="nav-item is-on" data-view="logs">Logs</button>
         <button type="button" class="nav-item" data-view="heartbeats">Heartbeats</button>
         <button type="button" class="nav-item" data-view="honey">Honeyfiles</button>
+        <button type="button" class="nav-item" data-view="Persistence">Persistence</button>
       </nav>
     </aside>
     <section class="main">
@@ -39,7 +40,7 @@
      </table>
       </div>
       <div id="panel-honey" class="hidden">
-        <div class="honey-meta" id="honey-meta">—</div>
+        <div class="honey-meta" id="honey-meta">:</div>
         <h2 class="block-title">Trap files</h2>
         <table class="log-table">
           <thead>
@@ -78,6 +79,20 @@
           <tbody id="honey-alerts">
             <tr><td colspan="3" class="empty">No honey alerts yet.</td></tr>
           </tbody>
+        </table>
+      </div>
+      <div id="panel-persistence" class="hidden">
+        <div class="honey-meta" id="persist-meta">:</div>
+        <h2 class="block-title">Persistence alerts</h2>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Massage</th>
+              <th>Entry</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
         </table>
       </div>
     </section>

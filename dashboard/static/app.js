@@ -8,9 +8,13 @@ const honeyMeta = document.getElementById("honey-meta");
 const honeyTraps = document.getElementById("honey-traps");
 const honeyFillers = document.getElementById("honey-fillers");
 const honeyAlerts = document.getElementById("honey-alerts");
+const panelPersist = document.getElementById("panel-persistence")
+const persistmeta = document.getElementById("persist-meta")
+const persistAlerts = document.getElementById("persist-alerts")
 let view = "logs"; 
 let events = [];
 let honey = null;
+let persist = null;
 
 function msg(event) {
   return event.message || event.massage || "";
@@ -92,11 +96,11 @@ function renderHoney() {
     honeyMeta.textContent =
       honey && honey.error ? honey.error : "honey data unavailable";
     honeyTraps.innerHTML =
-      '<tr><td colspan="3" class="empty">—</td></tr>';
+      '<tr><td colspan="3" class="empty">:</td></tr>';
     honeyFillers.innerHTML =
-      '<tr><td colspan="3" class="empty">—</td></tr>';
+      '<tr><td colspan="3" class="empty">:</td></tr>';
     honeyAlerts.innerHTML =
-      '<tr><td colspan="3" class="empty">—</td></tr>';
+      '<tr><td colspan="3" class="empty">:</td></tr>';
     return;
   }
   const trapOk = (honey.traps || []).filter((t) => t.exists).length;
@@ -142,6 +146,65 @@ function renderHoney() {
     .join("");
 }
 
+function persistDetail(event){
+  const bits = [];
+  if (event.value) bits.push("value=" + event.old);
+  if (event.old) bits.push("new=" + event.new);
+  return bits.join(" | ") || detail(event);
+}
+
+function renderPersist() {
+  if (!persist || !persist.ok) {
+    persistMeta.textContent = "persistence data unavailable";
+    persistAlerts.innerHTML = 
+      '<tr><td colspan="4" class="empty">:</td><tr>';
+    return;
+  }
+  const c = persist.alert_counts || {};
+  persistMeta.textContent = 
+    "watch: " +
+    (persist.watch_seen ? "seen in logs" : "not seen yet") +
+    "\n" +
+    "baseline entries: " +
+    (persist.baseline_entries == null ? "?": "persist.baseline_entries") +
+    "\n" +
+    "alert mix (last page): run=" +
+    (c.run || 0) +
+    "startup=" +
+    (c.startup || 0) +
+    "task = " +
+    (c.task || 0) +
+    "other = " +
+    (c.other || 0)
+  const alerts = persist.alerts || [];
+  if (!alerts.length) {
+    persistAlerts.innerHTML = 
+      '<tr><td colspan="4" class = "empty">No persistence alerts yet.</td></tr>';
+    return;
+  }
+  persistAlerts.innerHTML = alerts
+    .map((event) => {
+      return(
+        '<tr class="row-alert">' +
+        "<td>" +
+        esc(fmtTime(event.time)) +
+        "</td>" +
+        "<td>" +
+        esc(massage(event)) +
+        "</td>" +
+        "<td>" +
+        esc(event.entry || "") +
+        "</td>" +
+        "<td>" +
+        esc(persistDetail(event)) +
+        "</td>" +
+        "</tr>"
+      );
+    })
+    .join("");
+  }
+
+
 function renderLogs() {
   const list = visibleEvents();
   if (!list.length) {
@@ -184,14 +247,20 @@ function render() {
     logs: "Logs",
     heartbeats: "Heartbeats",
     honey: "Honeyfiles",
+    persistence: "Persistence",
   };
   viewTitle.textContent = titles[view] || "Logs";
   const showHoney = view === "honey";
+  const showPersist = view === "persistence";
   panelLogs.classList.toggle("hidden", showHoney);
   panelHoney.classList.toggle("hidden", !showHoney);
+  panelPersist.classList.toggle("hidden", !showPersist);
   if (showHoney) {
     renderHoney();
-  } else {
+  } else if(showPersist){
+    renderPersist();
+  }
+  else {
     renderLogs();
   }
 }
@@ -209,13 +278,18 @@ async function refresh() {
     const [evRes, honeyRes] = await Promise.all([
       fetch("/api/events?limit=500", { cache: "no-store" }),
       fetch("/api/honey", { cache: "no-store" }),
+      fetch("/api/persistence", { cache: "no-store"}),
     ]);
     const data = await evRes.json();
     events = data.events || [];
     honey = await honeyRes.json();
+    persist = await persistRes.json();
     if (view === "honey") {
       const n = (honey && honey.alerts && honey.alerts.length) || 0;
       statusLine.textContent = n + " honey alerts";
+    }  else if(view === "persistence"){
+      const n = (persist && persist.alerts && persist.length) || 0;
+      statusLine.textContent = n + " persistence alerts";
     } else {
       const logsCount = events.filter((e) => e.kind !== "heartbeat").length;
       const hbCount = events.filter((e) => e.kind === "heartbeat").length;

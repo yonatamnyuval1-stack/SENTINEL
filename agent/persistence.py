@@ -3,8 +3,10 @@ import winreg
 from pathlib import Path
 from event import log_event
 RUN_KEYS = [
-    (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run"),
-    (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run"),
+    (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", "run"),
+    (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run", "run"),
+    (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\RunOnce", "runonce")
+    (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\RunOnce", "runonce")
 ]
 
 def _startup_dirs():
@@ -30,7 +32,7 @@ def _read_run_key(hive, path):
                 name, value, _ = winreg.EnumValue(key, i)
             except OSError:
                 break
-            items[f"run:{path}:{name}"] = str(value)
+            items[f"{kind}:{path}:{name}"] = str(value)
             i += 1
     finally:
         winreg.CloseKey(key)
@@ -74,8 +76,8 @@ def _read_scheduled_tasks():
 
 def snapshot():
     data = {}
-    for hive, path in RUN_KEYS:
-        data.update(_read_run_key(hive, path))
+    for hive, path, kind in RUN_KEYS:
+        data.update(_read_run_key(hive, path, kind))
     data.update(_read_startup_files())
     data.update(_read_scheduled_tasks())
     return data
@@ -86,7 +88,6 @@ class PersistenceWatch:
         self._stop = threading.Event()
         self._thread = None
         self._base = {}
-
     def setup(self):
         self._base = snapshot()
         log_event(
@@ -100,13 +101,11 @@ class PersistenceWatch:
         )
         self._thread.start()
         log_event("system", "Persistence watch started")
-
     def stop(self):
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
-
     def _loop(self):
         while not self._stop.is_set():
             try:
@@ -114,7 +113,6 @@ class PersistenceWatch:
             except Exception as exc:
                 log_event("system", "Persistence watch error", error=str(exc))
             self._stop.wait(self.poll_seconds)
-
     def _check(self):
         now = snapshot()
         old_keys = set(self._base)

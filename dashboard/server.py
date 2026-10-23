@@ -38,7 +38,6 @@ def build_status(events):
         "total": len(events),
         "counts": counts,
     }
-
 def build_honey():
     if not HONEY_JSON.exists():
         return {
@@ -95,10 +94,42 @@ def build_honey():
         "traps": trap_rows,
         "alerts": honey_alerts,
     }
+def build_persistence():
+    events = read_events(limit = 1200)
+    alerts = []
+    baseline_entries = None
+    watch_seen = False
+    for event in events:
+        text = event.get("message") or event.get("massage") or ""
+        if event.get("kind") == "system":
+            if "Persistence watch baseline ready" in text and baseline_entries is None:
+                baseline_entries = event.get("entries")
+            if "Persistence watch started" in text:
+                watch_seen = True
+        if event.get("kind") == "alert" and event.get("source") == "persistence" and len(alerts) < 50:
+            alerts.append(event)
+    counts = {"run": 0, "startup": 0, "task": 0, "other": 0}
+    for event in alerts:
+        entry = str(event.get("entry") or "")
+        if entry.startswith("run:"):
+            count["run"] +=1
+        elif entry.startswith("startup:"):
+            count["startup"] +=1
+        elif entry.startswith("task:"):
+            count["task"] +=1
+        else:
+            count["other"] +=1
+    return{
+        "ok":True
+        "watch_seen": watch_seen or baseline_entries is not None,
+        "baseline_entries": baseline_entries,
+        "alerts_count": counts,
+        "alerts": alerts,
+    }
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
-
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == "/api/events":
@@ -111,6 +142,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(build_status(events))
         if parsed.path == "/api/honey":
             return self._json(build_honey())
+        if parsed.path == "/api/persistence":
+            return self._json(build_persistence())
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()

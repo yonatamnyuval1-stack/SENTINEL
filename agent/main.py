@@ -3,7 +3,6 @@ from datetime import datetime
 from event import log_event
 from honeyfiles import HoneyfileGuard
 from persistence import PersistenceWatch
-
 def main():
     print("SENTINEL starting...")
     print("Press Ctrl+C to stop.\n")
