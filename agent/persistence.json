@@ -1,0 +1,13 @@
+{
+    "poll_seconds": 10,
+    "watch": {
+        "run": true,
+        "runonce": true,
+        "startup": true,
+        "tasks": true
+    },
+    "ignore_prefixes": [
+        "task:Microsoft/",
+        "task:Microsoft\\"
+    ]
+}

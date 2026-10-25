@@ -9,7 +9,7 @@ const honeyTraps = document.getElementById("honey-traps");
 const honeyFillers = document.getElementById("honey-fillers");
 const honeyAlerts = document.getElementById("honey-alerts");
 const panelPersist = document.getElementById("panel-persistence")
-const persistmeta = document.getElementById("persist-meta")
+const persistMeta = document.getElementById("persist-meta")
 const persistAlerts = document.getElementById("persist-alerts")
 let view = "logs"; 
 let events = [];
@@ -148,8 +148,9 @@ function renderHoney() {
 
 function persistDetail(event){
   const bits = [];
-  if (event.value) bits.push("value=" + event.old);
-  if (event.old) bits.push("new=" + event.new);
+  if (event.value) bits.push("value=" + event.value);
+  if (event.old) bits.push("old=" + event.old);
+  if (event.new) bits.push("new=" + event.new)
   return bits.join(" | ") || detail(event);
 }
 
@@ -157,7 +158,7 @@ function renderPersist() {
   if (!persist || !persist.ok) {
     persistMeta.textContent = "persistence data unavailable";
     persistAlerts.innerHTML = 
-      '<tr><td colspan="4" class="empty">:</td><tr>';
+      '<tr><td colspan="4" class="empty">—</td></tr>';
     return;
   }
   const c = persist.alert_counts || {};
@@ -166,7 +167,7 @@ function renderPersist() {
     (persist.watch_seen ? "seen in logs" : "not seen yet") +
     "\n" +
     "baseline entries: " +
-    (persist.baseline_entries == null ? "?": "persist.baseline_entries") +
+    (persist.baseline_entries == null ? "?": persist.baseline_entries) +
     "\n" +
     "alert mix (last page): run=" +
     (c.run || 0) +
@@ -190,7 +191,7 @@ function renderPersist() {
         esc(fmtTime(event.time)) +
         "</td>" +
         "<td>" +
-        esc(massage(event)) +
+        esc(msg(event)) +
         "</td>" +
         "<td>" +
         esc(event.entry || "") +
@@ -252,7 +253,7 @@ function render() {
   viewTitle.textContent = titles[view] || "Logs";
   const showHoney = view === "honey";
   const showPersist = view === "persistence";
-  panelLogs.classList.toggle("hidden", showHoney);
+  panelLogs.classList.toggle("hidden", showHoney || showPersist);
   panelHoney.classList.toggle("hidden", !showHoney);
   panelPersist.classList.toggle("hidden", !showPersist);
   if (showHoney) {
@@ -275,7 +276,7 @@ function setView(next) {
 
 async function refresh() {
   try {
-    const [evRes, honeyRes] = await Promise.all([
+    const [evRes, honeyRes, persistRes] = await Promise.all([
       fetch("/api/events?limit=500", { cache: "no-store" }),
       fetch("/api/honey", { cache: "no-store" }),
       fetch("/api/persistence", { cache: "no-store"}),
@@ -288,7 +289,7 @@ async function refresh() {
       const n = (honey && honey.alerts && honey.alerts.length) || 0;
       statusLine.textContent = n + " honey alerts";
     }  else if(view === "persistence"){
-      const n = (persist && persist.alerts && persist.length) || 0;
+      const n = (persist && persist.alerts && persist.alerts.length) || 0;
       statusLine.textContent = n + " persistence alerts";
     } else {
       const logsCount = events.filter((e) => e.kind !== "heartbeat").length;

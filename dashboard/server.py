@@ -112,18 +112,18 @@ def build_persistence():
     for event in alerts:
         entry = str(event.get("entry") or "")
         if entry.startswith("run:"):
-            count["run"] +=1
+            counts["run"] += 1
         elif entry.startswith("startup:"):
-            count["startup"] +=1
+            counts["startup"] += 1
         elif entry.startswith("task:"):
-            count["task"] +=1
+            counts["task"] += 1
         else:
-            count["other"] +=1
+            counts["other"] += 1
     return{
-        "ok":True
+        "ok":True,
         "watch_seen": watch_seen or baseline_entries is not None,
         "baseline_entries": baseline_entries,
-        "alerts_count": counts,
+        "alert_counts": counts,
         "alerts": alerts,
     }
 

@@ -1,13 +1,56 @@
+import json
 import threading
 import winreg
 from pathlib import Path
 from event import log_event
+
+DATA_DIR = Path(__file__).resolve().parent/ "data"
+BASELINE_FILE = DATA_DIR/ "persistence_baseline.json"
+CONFIG_PATH = Path(__file__).resolve().parent / "persistence.json"
+
 RUN_KEYS = [
     (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", "run"),
     (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\Run", "run"),
-    (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\RunOnce", "runonce")
-    (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\RunOnce", "runonce")
+    (winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\RunOnce", "runonce"),
+    (winreg.HKEY_LOCAL_MACHINE, r"Software\Microsoft\Windows\CurrentVersion\RunOnce", "runonce"),
 ]
+
+def load_config():
+    cfg = {
+        "poll_seconds": 10,
+        "watch": {
+            "run": True,
+            "runonce": True,
+            "startup": True,
+            "tasks": True,
+        },
+        "ignore_prefixes": [
+            "task:Microsoft/",
+            "task:Microsoft\\",
+        ],
+    }
+    if not CONFIG_PATH.exists():
+        return cfg
+    try:
+        raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return cfg
+    if isinstance(raw.get("poll_seconds"), int) and raw["poll_seconds"] >0:
+        cfg["poll_seconds"] = raw["poll_seconds"]
+    watch = raw.get("watch")
+    if isinstance(watch,dict):
+        for key in cfg["watch"]:
+            if key in watch:
+                cfg["watch"][key] = bool(watch[key])
+    ignores = raw.get("ignore_prefixes")
+    if isinstance(ignores, list):
+        cfg["ignore_prefixes"] = [str(x) for x in ignores]
+    return cfg
+def _ignored(entry, prefixes):
+    for prefix in prefixes:
+        if entry.startswith(prefix):
+            return True
+    return False
 
 def _startup_dirs():
     home = Path.home()
@@ -19,7 +62,7 @@ def _startup_dirs():
         dirs.append(progdata)
     return dirs
 
-def _read_run_key(hive, path):
+def _read_run_key(hive, path, kind):
     items = {}
     try:
         key = winreg.OpenKey(hive, path, 0, winreg.KEY_READ)
@@ -74,27 +117,79 @@ def _read_scheduled_tasks():
             continue
     return items
 
-def snapshot():
+def snapshot(cfg = None):
+    if cfg is None:
+        cfg = load_config()
+    watch = cfg["watch"]
     data = {}
     for hive, path, kind in RUN_KEYS:
+        if not watch.get(kind, True):
+            continue
         data.update(_read_run_key(hive, path, kind))
-    data.update(_read_startup_files())
-    data.update(_read_scheduled_tasks())
+    if watch.get("startup", True):
+        data.update(_read_startup_files())
+    if watch.get("tasks", True):
+        data.update(_read_scheduled_tasks())
+    ignores = cfg.get("ignore_prefixes", [])
+    if ignores:
+        data = {
+            key: value
+            for key, value in data.items()
+            if not _ignored(key, ignores)
+        }
     return data
 
+def load_baseline():
+    if not BASELINE_FILE.exists():
+        return None
+    try:
+        raw = json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
+    except(OSError, json.JSONDecodeError):
+        return None
+    return{str(k): str(v) for k,v in raw.items()}
+
+def save_baseline(data):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    BASELINE_FILE.write_text(
+        json.dumps(data, ensure_ascii = False, indent=2) + "\n",
+        encoding = "utf-8",
+    )
+
 class PersistenceWatch:
-    def __init__(self, poll_seconds=10):
-        self.poll_seconds = poll_seconds
+    def __init__(self, poll_seconds=None):
+        self.cfg = load_config()
+        self.poll_seconds = (
+            poll_seconds
+            if poll_seconds is not None
+            else self.cfg["poll_seconds"]
+        )
         self._stop = threading.Event()
         self._thread = None
         self._base = {}
     def setup(self):
-        self._base = snapshot()
-        log_event(
-            "system",
-            "Persistence watch baseline ready",
-            entries=len(self._base),
-        )
+        saved = load_baseline()
+        if saved is None:
+            self._base = snapshot(self.cfg)
+            save_baseline(self._base)
+            log_event(
+                "system",
+                "Persistence watch baseline ready",
+                entries=len(self._base),
+                path = str(BASELINE_FILE)
+            )
+        else:
+            ignores = self.cfg.get("ignore_prefixes", [])
+            self._base = {
+                key: value
+                for key, value in saved.items()
+                if not _ignored(key, ignores)
+            }
+            log_event(
+                "system", 
+                "Persistence baseline loaded",
+                entries = len(self._base),
+                path = str(BASELINE_FILE)),
+            self._check()
         self._stop.clear()
         self._thread = threading.Thread(
             target=self._loop, name="persistence-watch", daemon=True
@@ -114,7 +209,7 @@ class PersistenceWatch:
                 log_event("system", "Persistence watch error", error=str(exc))
             self._stop.wait(self.poll_seconds)
     def _check(self):
-        now = snapshot()
+        now = snapshot(self.cfg)
         old_keys = set(self._base)
         new_keys = set(now)
         for key in sorted(new_keys - old_keys):
@@ -144,3 +239,4 @@ class PersistenceWatch:
                     source="persistence",
                 )
         self._base = now
+        save_baseline(self._base)
