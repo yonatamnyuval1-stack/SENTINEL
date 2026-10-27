@@ -1,8 +1,14 @@
 import ctypes
+import json
 import threading
+import time
 from ctypes import wintypes
+from datetime import datetime,timezone
 from pathlib import Path
 from event import log_event
+DATA_DIR = Path(__file__).resolve().parent / "data"
+BASELINE_FILE = DATA_DIR / "process_baseline.json"
+CONFIG_PATH = Path(__file__).resolve().parent / "process.json"
 PROCESS_QUERY_LIMITED_INFORMATION =  0x1000
 SUSPICIOUS_PATH_PARTS = (
     "\\temp\\",
@@ -11,6 +17,87 @@ SUSPICIOUS_PATH_PARTS = (
     "\\appdata\\local\\temp\\",
     "\\appdata\\roaming\\temp\\",
 )
+
+def load_process_config():
+    cfg = {
+        "warm_up_hours": 48,
+        "min_count": 2,
+        "alert_on_unknown": True,
+        "save_every": 20
+    }
+    if not CONFIG_PATH.exists():
+        return cfg
+    try:
+        raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except(OSError, json.JSONDecodeError):
+        return cfg
+    for key in("warm_up_hours","min_count","save_every"):
+        if isinstance(raw.get(key), int) and raw[key] >0:
+            cfg[key] = raw[key]
+    if "alert_on_unknown" in raw:
+        cfg["alert_on_unknown"] = bool(raw["alert_on_unknown"])
+    return cfg
+
+def _norm_key(path):
+    return str(path or "").strip().lower().replace("/","\\")
+
+def load_baseline():
+    if not BASELINE_FILE.exists():
+        return {
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "images": {},
+            "pairs": {}, 
+        }
+    try:
+        raw = json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
+    except(OSError, json.JSONDecodeError):
+        return{
+            "started_at": dateline.now(timezone.utc).isformat(),
+            "images": {},
+            "pairs": {},
+        }
+    if not isinstance(raw,dict):
+        raw = {}
+    return {
+        "started_at": raw.get("started_at")
+        or datetime.now(timezone.utc).isoformat(),
+        "images": raw.get("images") if isinstance(raw.get("images"), dict) else{},
+        "pairs": raw.get("pairs") if isinstance(raw.get("pairs"), dict) else {},
+    }
+
+def save_baseline(data):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    BASELINE_FILE.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+def _in_warm_up(baseline, warm_up_hours):
+    try:
+        started = datetime.fromisoformat(baseline["started_at"])
+    except Exception:
+        return True
+    age_h = (datetime.now(timezone.utc) - started).total_seconds() / 3600.0
+    return age_h < float(warm_up_hours)
+
+def _touch_entry(bucket,key):
+    now = datetime.now(timezone.utc).isoformat()
+    item = bucket.get(key)
+    if not isinstance(item, dict):
+        bucket[key] = {"count": 1, "last": now}
+        return 1
+    item["count"] = int(item.get("count", 0)) + 1
+    item["last"] = now
+    return int(item["count"])
+
+def _count_of(bucket, key):
+    item = bucket.get(key)
+    if not isinstance(item, dict):
+        return 0
+    try:
+        return int(item.get("count", 0))
+    except Exception:
+        return 0
 try:
     from etw import ETW, ProviderInfo
     from etw.GUID import GUID
@@ -89,7 +176,10 @@ class ProcessWatch:
         self._thread = None
         self._stop = threading.Event()
         self._seen = set()
-
+        self.cfg = load_process_config()
+        self.baseline = load_baseline
+        self._lock = threading.Lock()
+        self._since_save = 0
     def setup(self):
         if ETW is None:
             log_event(
@@ -110,10 +200,23 @@ class ProcessWatch:
             target=self._run, name="process-watch", daemon=True
         )
         self._thread.start()
-        log_event("system", "Process watch started (ETW)")
-
+        mode = (
+            "warm_up"
+            if _in_warm_up(self.baseline, self.cfg["warm_up_hours"])
+            else "monitor"
+        )
+        log_event(
+            "system",
+            "Process watch started (ETW)",
+            mode=mode,
+            baseline_images = len(self.baseline.get("images", {})),
+            baseline_pairs = len(self.baseline.get("pairs", {})), 
+            path = str(BASELINE_FILE),
+            )
     def stop(self):
         self._stop.set()
+        with self._lock:
+            save_baseline(self.baseline)
         if self._etw is not None:
             try:
                 self._etw.stop()
@@ -123,7 +226,6 @@ class ProcessWatch:
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
-
     def _run(self):
         try:
             self._etw.start()
@@ -133,7 +235,6 @@ class ProcessWatch:
                 "Process watch failed (need Administrator for ETW)",
                 error=str(exc),
             )
-
     def _on_event(self, event_data):
         if self._stop.is_set():
             return
@@ -158,7 +259,6 @@ class ProcessWatch:
         image = _normalize_image(image)
         full = _query_image(pid) or image
         parent = _query_image(ppid) or ""
-
         key = f"{pid}|{ppid}|{full}"
         if key in self._seen:
             return
@@ -166,6 +266,31 @@ class ProcessWatch:
         if len(self._seen) > 5000:
             self._seen = set(list(self._seen)[-2000:])
         reasons = _suspicious_reasons(full, parent)
+        img_key = _norm_key(full)
+        par_key = _norm_key(parent)
+        pair_key = par_key + "|" + img_key
+        with self._lock:
+            warm = _in_warm_up(self.baseline, self.cfg["warm_up_hours"])
+            images = self.baseline.setdefault("images", {})
+            pairs = self.baseline.setdefault("pairs",{})
+            img_before = _count_of(images, img_key) 
+            pair_before = _count_of(pairs, pair_key) 
+            if warm:
+                img_count = _touch_entry(images, img_key) if img_key else 0
+                pair_count = _touch_entry(pairs, pair_key) if img_key else 0
+            else:
+                if img_key and img_before < 0:
+                    img_count = _touch_entry(images, img_key)
+                else:
+                    img_count = img_before
+                if img_key and pair_before < 0:
+                    pair_count = _touch_entry(pairs, pair_key)
+                else:
+                    pair_count = pair_before
+            self._since_save += 1
+            if self._since_save >= self.cfg["save_every"]:
+                save_baseline(self.baseline)
+                self._since_save = 0
         log_event(
             "system",
             "Process started",
@@ -173,6 +298,7 @@ class ProcessWatch:
             ppid=str(ppid),
             image=full,
             parent=parent,
+            mode = "warm_up" if warm else "monitor",
             source="process_etw",
         )
         if reasons:
@@ -186,3 +312,23 @@ class ProcessWatch:
                 reasons=",".join(reasons),
                 source="process_etw",
             )
+        if ( not warm and self.cfg["alert_on_unknown"] and img_key):
+            min_count = self.cfg["min_count"]
+            unknown_bits = []
+            if img_before > min_count:
+                unknown_bits.append("unknown_image")
+            if pair_before > min_count:
+                unknown_bits.append("unknown_pair")
+            if unknown_bits:
+                log_event(
+                    "alert",
+                    "Process outside baseline",
+                    pid = str(pid),
+                    ppid = str(ppid),
+                    image = full,
+                    parent = parent,
+                    reasons = ",".join(unknown_bits),
+                    image_count = img_before,
+                    pair_count = pair_before,
+                    source = "process_etw"
+                )
