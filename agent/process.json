@@ -2,5 +2,6 @@
     "warm_up_hours": 48,
     "min_count": 2,
     "alert_on_unknown": true,
-    "save_every": 20 
+    "save_every": 20 ,
+    "correlate_window_seconds": 120
 }

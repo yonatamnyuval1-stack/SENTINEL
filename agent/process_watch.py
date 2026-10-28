@@ -5,7 +5,7 @@ import time
 from ctypes import wintypes
 from datetime import datetime,timezone
 from pathlib import Path
-from event import log_event
+from event import EVENTS_FILE, log_event
 DATA_DIR = Path(__file__).resolve().parent / "data"
 BASELINE_FILE = DATA_DIR / "process_baseline.json"
 CONFIG_PATH = Path(__file__).resolve().parent / "process.json"
@@ -23,7 +23,8 @@ def load_process_config():
         "warm_up_hours": 48,
         "min_count": 2,
         "alert_on_unknown": True,
-        "save_every": 20
+        "save_every": 20,
+        "correlate_window_seconds": 120
     }
     if not CONFIG_PATH.exists():
         return cfg
@@ -31,7 +32,7 @@ def load_process_config():
         raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except(OSError, json.JSONDecodeError):
         return cfg
-    for key in("warm_up_hours","min_count","save_every"):
+    for key in("warm_up_hours","min_count","save_every", "correlate_window_seconds"):
         if isinstance(raw.get(key), int) and raw[key] >0:
             cfg[key] = raw[key]
     if "alert_on_unknown" in raw:
@@ -52,7 +53,7 @@ def load_baseline():
         raw = json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
     except(OSError, json.JSONDecodeError):
         return{
-            "started_at": dateline.now(timezone.utc).isformat(),
+            "started_at": datetime.now(timezone.utc).isformat(),
             "images": {},
             "pairs": {},
         }
@@ -64,14 +65,12 @@ def load_baseline():
         "images": raw.get("images") if isinstance(raw.get("images"), dict) else{},
         "pairs": raw.get("pairs") if isinstance(raw.get("pairs"), dict) else {},
     }
-
 def save_baseline(data):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     BASELINE_FILE.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-
 def _in_warm_up(baseline, warm_up_hours):
     try:
         started = datetime.fromisoformat(baseline["started_at"])
@@ -79,7 +78,6 @@ def _in_warm_up(baseline, warm_up_hours):
         return True
     age_h = (datetime.now(timezone.utc) - started).total_seconds() / 3600.0
     return age_h < float(warm_up_hours)
-
 def _touch_entry(bucket,key):
     now = datetime.now(timezone.utc).isoformat()
     item = bucket.get(key)
@@ -89,7 +87,6 @@ def _touch_entry(bucket,key):
     item["count"] = int(item.get("count", 0)) + 1
     item["last"] = now
     return int(item["count"])
-
 def _count_of(bucket, key):
     item = bucket.get(key)
     if not isinstance(item, dict):
@@ -98,6 +95,70 @@ def _count_of(bucket, key):
         return int(item.get("count", 0))
     except Exception:
         return 0
+def _event_ts(event):
+    raw = event.get("time") or ""
+    try:
+        return datetime.fromisoformat(raw).timestamp()
+    except Exception:
+        return 0.0
+
+def recent_related_alerts(window_seconds):
+    if not EVENTS_FILE.exists():
+        return []
+    try:
+        lines = EVENTS_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    cutoff = time.time() - float(window_seconds)
+    hits = []
+    for line in lines[-400:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("kind") != "alert":
+            continue
+        if _event_ts(event) < cutoff:
+            continue
+        src = str(event.get("source") or "")
+        msg = str(event.get("message") or event.get("massage") or "")
+        related = False
+        tag = ""
+        if src == "persistence":
+            related = True
+            tag = "persistence"
+        elif src == "windows_audit" or "Trap" in msg:
+            related = True
+            tag = "honeyfiles"
+        if related:
+            hits.append({"tag": tag, "massage": msg, "source": src})
+    return hits
+
+def maybe_correlate(pid,ppid, image, parent, process_reasons, window_seconds):
+    if not process_reasons:
+        return
+    hits = recent_related_alerts(window_seconds)
+    if not hits:
+        return
+    tags = []
+    for hit in hits:
+        if hit["tag"] not in tags:
+            tags.append(hit["tag"])
+    log_event(
+        "alert",
+        "Correlated host activity",
+        pid=str(pid),
+        ppid=str(ppid),
+        image=image,
+        parent=parent,
+        process_reasons=",".join(process_reasons),
+        related =",".join(tags),
+        window_seconds= int(window_seconds),
+        source="correlation",
+    )
 try:
     from etw import ETW, ProviderInfo
     from etw.GUID import GUID
@@ -177,7 +238,7 @@ class ProcessWatch:
         self._stop = threading.Event()
         self._seen = set()
         self.cfg = load_process_config()
-        self.baseline = load_baseline
+        self.baseline = load_baseline()
         self._lock = threading.Lock()
         self._since_save = 0
     def setup(self):
@@ -279,11 +340,11 @@ class ProcessWatch:
                 img_count = _touch_entry(images, img_key) if img_key else 0
                 pair_count = _touch_entry(pairs, pair_key) if img_key else 0
             else:
-                if img_key and img_before < 0:
+                if img_key and img_before > 0:
                     img_count = _touch_entry(images, img_key)
                 else:
                     img_count = img_before
-                if img_key and pair_before < 0:
+                if img_key and pair_before > 0:
                     pair_count = _touch_entry(pairs, pair_key)
                 else:
                     pair_count = pair_before
@@ -315,9 +376,9 @@ class ProcessWatch:
         if ( not warm and self.cfg["alert_on_unknown"] and img_key):
             min_count = self.cfg["min_count"]
             unknown_bits = []
-            if img_before > min_count:
+            if img_before < min_count:
                 unknown_bits.append("unknown_image")
-            if pair_before > min_count:
+            if pair_before < min_count:
                 unknown_bits.append("unknown_pair")
             if unknown_bits:
                 log_event(
@@ -332,3 +393,17 @@ class ProcessWatch:
                     pair_count = pair_before,
                     source = "process_etw"
                 )
+        corr_reasons = list(reasons)
+        if (not warm) and self.cfg["alert_on_unknown"] and img_key:
+            if img_before < self.cfg["min_count"]:
+                corr_reasons.append("unknown_image")
+            if pair_before < self.cfg["min_count"]:
+                corr_reasons.append("unknown_pair")
+        maybe_correlate(
+            pid,
+            ppid,
+            full,
+            parent,
+            corr_reasons,
+            self.cfg.get("correlate_window_seconds", 120)
+        )
