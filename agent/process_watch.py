@@ -24,7 +24,22 @@ def load_process_config():
         "min_count": 2,
         "alert_on_unknown": True,
         "save_every": 20,
-        "correlate_window_seconds": 120
+        "correlate_window_seconds": 120,
+        "ignore_image_prefixes": [
+            "c:\\windows\\system32\\",
+            "c:\\windows\\syswow64\\",
+            "c:\\windows\\winsxs\\",
+        ],
+        "ignore_image_names": [
+            "svchost.exe",
+            "runtimebroker.exe",
+            "searchindexer.exe",
+            "conhost.exe",
+            "dllhost.exe",
+            "taskhostw.exe",
+            "sihost.exe",
+            "ctfmon.exe",
+        ],
     }
     if not CONFIG_PATH.exists():
         return cfg
@@ -37,10 +52,27 @@ def load_process_config():
             cfg[key] = raw[key]
     if "alert_on_unknown" in raw:
         cfg["alert_on_unknown"] = bool(raw["alert_on_unknown"])
+    if isinstance(raw.get("ignore_image_prefixes"), list):
+        cfg["ignore_image_prefixes"] = [str(x) for x in raw["ignore_image_prefixes"]]
+    if isinstance(raw.get("ignore_image_names"), list):
+        cfg["ignore_image_names"] = [str(x).lower() for x in raw["ignore_image_names"]]
     return cfg
-
 def _norm_key(path):
     return str(path or "").strip().lower().replace("/","\\")
+
+def _ignored_image(path,cfg):
+    low = _norm_key(path)
+    if not low:
+        return True
+    name = Path(low).name
+    for item in cfg.get("ignore_image_names", []):
+        if name == str(item).lower():
+            return True
+    for prefix in cfg.get("ignore_image_prefixes", []):
+        p = _norm_key(prefix)
+        if p and p in low:
+            return True
+    return False 
 
 def load_baseline():
     if not BASELINE_FILE.exists():
@@ -53,7 +85,7 @@ def load_baseline():
         raw = json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
     except(OSError, json.JSONDecodeError):
         return{
-            "started_at": datetime.now(timezone.utc).isformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
             "images": {},
             "pairs": {},
         }
@@ -326,7 +358,8 @@ class ProcessWatch:
         self._seen.add(key)
         if len(self._seen) > 5000:
             self._seen = set(list(self._seen)[-2000:])
-        reasons = _suspicious_reasons(full, parent)
+        ignored = _ignored_image(full, self.cfg)
+        reasons = [] if ignored else _suspicious_reasons(full, parent)
         img_key = _norm_key(full)
         par_key = _norm_key(parent)
         pair_key = par_key + "|" + img_key
@@ -373,7 +406,7 @@ class ProcessWatch:
                 reasons=",".join(reasons),
                 source="process_etw",
             )
-        if ( not warm and self.cfg["alert_on_unknown"] and img_key):
+        if ( not warm and self.cfg["alert_on_unknown"] and img_key and (not ignored)):
             min_count = self.cfg["min_count"]
             unknown_bits = []
             if img_before < min_count:
@@ -394,7 +427,7 @@ class ProcessWatch:
                     source = "process_etw"
                 )
         corr_reasons = list(reasons)
-        if (not warm) and self.cfg["alert_on_unknown"] and img_key:
+        if (not warm) and self.cfg["alert_on_unknown"] and img_key and (not ignored):
             if img_before < self.cfg["min_count"]:
                 corr_reasons.append("unknown_image")
             if pair_before < self.cfg["min_count"]:
