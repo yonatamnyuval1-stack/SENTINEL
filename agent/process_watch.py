@@ -10,6 +10,24 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 BASELINE_FILE = DATA_DIR / "process_baseline.json"
 CONFIG_PATH = Path(__file__).resolve().parent / "process.json"
 PROCESS_QUERY_LIMITED_INFORMATION =  0x1000
+CMDLINE_SUSPICIOUS = (
+    " -enc",
+    " -encodedcommand",
+    " -e",
+    " -ep bypass",
+    " exectutionpolicy bypass"
+    "downloadstring",
+    "frombase64string",
+    "invoke-expression",
+    "iex (",
+    "iex",
+    "mshta http",
+    "certutil -decode",
+    "bitsadmin / transfer",
+    "wscript.shell",
+    "cmd /c powershell",
+    "cmd.exe /c powershell"
+)
 SUSPICIOUS_PATH_PARTS = (
     "\\temp\\",
     "\\tmp\\",
@@ -148,7 +166,7 @@ def _event_blob(event):
     ]
     return " ".join(str(p) for p in parts if p).lower().replace("/","\\")
 
-def _score_hit(image, parent, hit):
+def _score_hit(image, parent, hit, cmdline=""):
     score = 1
     links = ["time_window"]
     img = _norm_key(image)
@@ -166,6 +184,15 @@ def _score_hit(image, parent, hit):
         if par_name and par_name in blob:
                 score += 1
                 links.append("parent_name_in_related")
+        cmd = str(cmdline or "").lower().replace("/", "\\")
+        blob = hit.get("blob") or ""
+        if cmd and blob:
+            for piece in blob.split():
+                if len(piece) >= 10 and piece in cmd:
+                    score += 2
+                    if "related_in_cmdline" not in links:
+                        links.append("related_in_cmdline")
+                    break
         return score,links
 
 def recent_related_alerts(window_seconds):
@@ -208,7 +235,7 @@ def recent_related_alerts(window_seconds):
                 })
     return hits
 
-def maybe_correlate(pid,ppid, image, parent, process_reasons, cfg):
+def maybe_correlate(pid,ppid, image, parent, process_reasons, cfg, cmdline=""):
     if not process_reasons:
         return
     window_seconds = cfg.get("correlate_window_seconds", 120)
@@ -222,7 +249,9 @@ def maybe_correlate(pid,ppid, image, parent, process_reasons, cfg):
     for hit in hits:
         if hit["tag"] not in tags:
             tags.append(hit["tag"])
-        score, links = _score_hit(image, parent, hit)
+        score, links = _score_hit(
+            image, parent, hit,cmdline=cmdline
+        )
         if score > best:
             best = score
         for item in links:
@@ -241,6 +270,7 @@ def maybe_correlate(pid,ppid, image, parent, process_reasons, cfg):
         ppid=str(ppid),
         image=image,
         parent=parent,
+        cmdline=str(cmdline or "")[:500],
         process_reasons=",".join(process_reasons),
         related =",".join(tags),
         links = ",".join(link_bits),
@@ -286,6 +316,71 @@ def _query_image(pid):
     finally:
         kernel32.CloseHandle(handle)
     return ""
+
+def _cmdline_from_etw(fields):
+    for name in ("CommandLine", "CommandLineString", "CmdLine"):
+        val = _field(fields, name, "")
+        if not val:
+            continue
+        if isinstance(val, bytes):
+            val = val.decode("utf-8", errors="replace")
+        text = str(val).strip()
+        if text:
+            return text
+    return ""
+def _query_cmdline(pid):
+    try:
+        pid_i = int(pid)
+    except (TypeError, ValueError):
+        return ""
+    if pid_i <= 0:
+        return ""
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error = True)
+    ntdll = ctypes.WinDLL("ntdll", use_last_error = True)
+    handle = kernel32.OpenProcess(
+        PROCESS_QUERY_LIMITED_INFORMATION, False, pid_i
+    )
+    if not handle:
+        return ""
+    try:
+        size = wintypes.ULONG(0)
+        status = ntdll.NtQueryInformationProcess(
+            handle,
+            ProcessCommandLineInformation,
+            None,
+            0,
+            ctypes.byref(size),
+        )
+        if size.value <= 0:
+            return ""
+        buf = (ctypes.c_byte * size.value)()
+        status = ntdll.NtQueryInformationProcess(
+            handle,
+            ProcessCommandLineInformation,
+            ctypes.byref(buf),
+            size.value,
+            ctypes.byref(size),
+        )
+        if status != 0:
+            return ""
+
+        class UNICODE_STRING(ctypes.Structure):
+            _fields_ = [
+                ("Length", wintypes.USHORT),
+                ("MaximumLength", wintypes.USHORT),
+                ("Buffer", ctypes.c_void_p),
+            ]
+
+        us = UNICODE_STRING.from_buffer_copy(
+            bytes(buf)[: ctypes.sizeof(UNICODE_STRING)]
+        )
+        if not us.Buffer or us.Length <= 0:
+            return ""
+        return ctypes.wstring_at(us.Buffer, us.Length // 2).strip()
+    except Exception:
+        return ""
+    finally:
+        kernel32.CloseHandle(handle)
 def _normalize_image(raw):
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8", errors = "replace")
@@ -294,7 +389,7 @@ def _normalize_image(raw):
         return ""
     text = text.replace("\\Device\\HarddiskVolume", "vol")
     return text
-def _suspicious_reasons(image_path, parent_path):
+def _suspicious_reasons(image_path, parent_path, cmdline=""):
     reasons = []
     low = image_path.lower().replace("/","\\")
     if not low:
@@ -315,6 +410,11 @@ def _suspicious_reasons(image_path, parent_path):
             reasons.append("script_parent_user_path")
     if name.endswith(".exe") and "\\downloads\\" in low:
         reasons.append("exe_from_downloads")
+    cmd = " " + str(cmdline or "").lower() + " "
+    for flag in CMDLINE_SUSPICIOUS:
+        if flag in cmd:
+            reasons.append("suspicious_cmdline")
+            break
     out = []
     for r in reasons:
         if r not in out:
@@ -409,6 +509,7 @@ class ProcessWatch:
         image = _normalize_image(image)
         full = _query_image(pid) or image
         parent = _query_image(ppid) or ""
+        cmdline = _cmdline_from_etw(fields) or _query_cmdline(pid)
         key = f"{pid}|{ppid}|{full}"
         if key in self._seen:
             return
@@ -416,7 +517,7 @@ class ProcessWatch:
         if len(self._seen) > 5000:
             self._seen = set(list(self._seen)[-2000:])
         ignored = _ignored_image(full, self.cfg)
-        reasons = [] if ignored else _suspicious_reasons(full, parent)
+        reasons = [] if ignored else _suspicious_reasons(full, parent, cmdline=cmdline)
         img_key = _norm_key(full)
         par_key = _norm_key(parent)
         pair_key = par_key + "|" + img_key
@@ -449,6 +550,7 @@ class ProcessWatch:
             ppid=str(ppid),
             image=full,
             parent=parent,
+            cmdline=str(cmdline or "")[:500],
             mode = "warm_up" if warm else "monitor",
             source="process_etw",
         )
@@ -460,6 +562,7 @@ class ProcessWatch:
                 ppid=str(ppid),
                 image=full,
                 parent=parent,
+                cmdline=str(cmdline or "")[:500],
                 reasons=",".join(reasons),
                 source="process_etw",
             )
@@ -478,6 +581,7 @@ class ProcessWatch:
                     ppid = str(ppid),
                     image = full,
                     parent = parent,
+                    cmdline=str(cmdline or "")[:500],
                     reasons = ",".join(unknown_bits),
                     image_count = img_before,
                     pair_count = pair_before,
