@@ -11,10 +11,15 @@ const honeyAlerts = document.getElementById("honey-alerts");
 const panelPersist = document.getElementById("panel-persistence")
 const persistMeta = document.getElementById("persist-meta")
 const persistAlerts = document.getElementById("persist-alerts")
+const panelProcess = document.getElementById("panel-process")
+const processMeta = document.getElementById("process-meta")
+const processAlerts = document.getElementById("process-alerts")
+const processCorr = document.getElementById("process-corr")
 let view = "logs"; 
 let events = [];
 let honey = null;
 let persist = null;
+let processData = null;
 
 function msg(event) {
   return event.message || event.massage || "";
@@ -205,6 +210,90 @@ function renderPersist() {
     .join("");
   }
 
+function processDetail(event){
+  const bits = [];
+  if (event.parent) bits.push("parent=" +event.parent);
+  if (event.reasons) bits.push("reasons=" +event.reasons);
+  if (event.process_reasons) bits.push("process_reasons=" +event.process_reasons);
+  if (event.related) bits.push("related=" +event.related);
+  if (event.pid) bits.push("pid=" +event.pid);
+  if (event.ppid) bits.push("ppid=" +event.ppid);
+  return bits.join(" | ") || detail(event);
+}
+
+function renderProcess(){
+  if (!processData || !processData.ok) {
+    processMeta.textContent = "process data unavailable";
+    processAlerts.innerHTML = 
+      '<tr><td colspan="4" class="empty">—</td></tr>';
+    processCorr.innerHTML = 
+      '<tr><td colspan="4" class="empty">—</td></tr>';
+    return;
+  }
+  processMeta.textContent = 
+    "mode:" +
+    (processData.mode || "?")+
+    "\n" +
+    "baseline images: " +
+    (processData.baseline_images || 0) +
+    " | pairs: " +
+    (processData.baseline_pairs || 0) +
+    "\n" +
+    "baseline started: " +
+    (processData.started_at || "?");
+  const alerts = processData.alerts || [];
+  if (!alerts.length) {
+    processAlerts.innerHTML = 
+      '<tr><td colspan="4" class="empty">No process alerts yet.</td></tr>';
+  } else {
+    processAlerts.innerHTML = alerts
+      .map((event) => {
+        return(
+          '<tr class="row-alert">' +
+          "<td>" +
+          esc(fmtTime(event.time)) +
+          "</td>" +
+          "<td>" +
+          esc(msg(event)) +
+          "</td>" +
+          "<td>" +
+          esc(event.image || "") +
+          "</td>" +
+          "<td>" +
+          esc(processDetail(event)) +
+          "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+  }
+  const corr = processData.correlated || [];
+  if (!corr.length) {
+    processCorr.innerHTML = 
+      `<tr><td colspan="4" class="empty">No correlated alerts yet.</td></tr>`;
+  } else {
+    processCorr.innerHTML = corr
+    .map((event) =>{
+      return (
+        `<tr class="row-alert">` +
+        "<td>" +
+        esc(fmtTime(event.time)) +
+        "</td>" +
+        "<td>" +
+        esc(msg(event)) +
+        "</td>" +
+        "<td>" +
+        esc(event.related || "") +
+        "</td>" +
+        "<td>" +
+        esc(processDetail(event)) +
+        "</td>" +
+        "</tr>"
+      );
+    })
+    .join("");
+  }
+}
 
 function renderLogs() {
   const list = visibleEvents();
@@ -249,17 +338,25 @@ function render() {
     heartbeats: "Heartbeats",
     honey: "Honeyfiles",
     persistence: "Persistence",
+    process: "Process",
   };
   viewTitle.textContent = titles[view] || "Logs";
   const showHoney = view === "honey";
   const showPersist = view === "persistence";
-  panelLogs.classList.toggle("hidden", showHoney || showPersist);
+  const showProcess = view === "process";
+  panelLogs.classList.toggle(
+    "hidden",
+    showHoney || showPersist || showProcess
+  );
   panelHoney.classList.toggle("hidden", !showHoney);
   panelPersist.classList.toggle("hidden", !showPersist);
+  panelProcess.classList.toggle("hidden", !showProcess);
   if (showHoney) {
     renderHoney();
   } else if(showPersist){
     renderPersist();
+  } else if(showProcess){
+    renderProcess();
   }
   else {
     renderLogs();
@@ -276,21 +373,27 @@ function setView(next) {
 
 async function refresh() {
   try {
-    const [evRes, honeyRes, persistRes] = await Promise.all([
+    const [evRes, honeyRes, persistRes, processRes] = await Promise.all([
       fetch("/api/events?limit=500", { cache: "no-store" }),
       fetch("/api/honey", { cache: "no-store" }),
       fetch("/api/persistence", { cache: "no-store"}),
+      fetch("/api/process", { cache: "no-store"}),
     ]);
     const data = await evRes.json();
     events = data.events || [];
     honey = await honeyRes.json();
     persist = await persistRes.json();
+    processData = await processRes.json();
     if (view === "honey") {
       const n = (honey && honey.alerts && honey.alerts.length) || 0;
       statusLine.textContent = n + " honey alerts";
-    }  else if(view === "persistence"){
+    } else if(view === "persistence"){
       const n = (persist && persist.alerts && persist.alerts.length) || 0;
       statusLine.textContent = n + " persistence alerts";
+    } else if(view === "process"){
+      const a = (processData && processData.alerts && processData.alerts.length) || 0;
+      const c = (processData && processData.correlated && processData.correlated.length) || 0;
+      statusLine.textContent = a +"process, " + c + "correlated";
     } else {
       const logsCount = events.filter((e) => e.kind !== "heartbeat").length;
       const hbCount = events.filter((e) => e.kind === "heartbeat").length;

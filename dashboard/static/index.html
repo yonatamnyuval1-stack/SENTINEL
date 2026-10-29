@@ -15,6 +15,7 @@
         <button type="button" class="nav-item" data-view="heartbeats">Heartbeats</button>
         <button type="button" class="nav-item" data-view="honey">Honeyfiles</button>
         <button type="button" class="nav-item" data-view="persistence">Persistence</button>
+        <button type="button" class="nav-item" data-view="process">Process</button>
       </nav>
     </aside>
     <section class="main">
@@ -98,6 +99,37 @@
           </tbody>
         </table>
       </div>
+      <div id="panel-process" class="hidden">
+        <div class="honey-meta" id="process-meta">—</div>
+        <h2 class="block-title">Process alerts</h2>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Massage</th>
+              <th>Image</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+    <tbody id="process-alerts">
+      <tr><td colspan="4" class="empty">No process alerts yet.</td></tr>
+    </tbody>
+  </table>
+  <h2 class="block-title">Correlated alerts</h2>
+  <table class="log-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Massage</th>
+        <th>Related</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody id="process-corr">
+      <tr><td colspan="4" class="empty">No correlated alerts yet.</td></tr>
+    </tbody>
+  </table>
+</div>
     </section>
   </div>
   <script src="/app.js"></script>

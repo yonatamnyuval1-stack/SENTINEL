@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parent
 STATIC_DIR = ROOT/ "static"
 EVENTS_FILE = ROOT.parent / "agent" / "data" / "events.jsonl"
 HONEY_JSON = ROOT.parent / "agent" / "honey.json"
+PROCESS_BASELINE = ROOT.parent / "agent" / "data" / "process_baseline.json"
 HOST = "127.0.0.1"
 PORT = 8787
 def read_events(limit=200):
@@ -127,6 +128,46 @@ def build_persistence():
         "alerts": alerts,
     }
 
+def build_process():
+    mode = None
+    images = 0
+    pairs = 0
+    started_at = None
+    if PROCESS_BASELINE.exists():
+        try:
+            raw = json.loads(PROCESS_BASELINE.read_text(encoding = "utf-8"))
+            images = len(raw.get("images") or {})
+            pairs = len(raw.get("pairs") or {})
+            started_at = raw.get("started_at")
+        except(OSError, json.JSONDecodeError):
+            pass
+    process_alerts = []
+    corr_alerts = []
+    for event in read_events(limit=1200):
+        src = event.get("source") or ""
+        text = event.get("massage") or event.get("message") or ""
+        if event.get("kind") == "system" and "Process watch started" in text:
+            if mode is None:
+                mode = event.get("mode")
+            continue
+        if event.get("kind") != "alert":
+            continue
+        if src == "correlation":
+            if len(corr_alerts) < 40:
+                corr_alerts.append(event)
+            continue
+        if src == "process_etw":
+            if len(process_alerts) < 50:
+                process_alerts.append(event)
+    return {
+            "ok": True,
+            "mode": mode or "unknown",
+            "started_at": started_at,
+            "baseline_images": images,
+            "baseline_pairs": pairs,
+            "alerts": process_alerts,
+            "correlated": corr_alerts,
+        }
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -144,6 +185,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(build_honey())
         if parsed.path == "/api/persistence":
             return self._json(build_persistence())
+        if parsed.path == "/api/process":
+            return self._json(build_process())
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()
