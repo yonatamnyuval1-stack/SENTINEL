@@ -25,6 +25,7 @@ def load_process_config():
         "alert_on_unknown": True,
         "save_every": 20,
         "correlate_window_seconds": 120,
+        "correlate_min_score": 2,
         "ignore_image_prefixes": [
             "c:\\windows\\system32\\",
             "c:\\windows\\syswow64\\",
@@ -47,7 +48,7 @@ def load_process_config():
         raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except(OSError, json.JSONDecodeError):
         return cfg
-    for key in("warm_up_hours","min_count","save_every", "correlate_window_seconds"):
+    for key in("warm_up_hours","min_count","save_every", "correlate_window_seconds", "correlate_min_score"):
         if isinstance(raw.get(key), int) and raw[key] >0:
             cfg[key] = raw[key]
     if "alert_on_unknown" in raw:
@@ -134,6 +135,39 @@ def _event_ts(event):
     except Exception:
         return 0.0
 
+def _event_blob(event):
+    parts = [
+        event.get("path"),
+        evnet.get("entry"),
+        event.get("value"),
+        event.get("old"),
+        event.get("new"),
+        event.get("process"),
+        event.get("dest"),
+        event.get("massage") or event.get("message"),
+    ]
+    return " ".join(str(p) for p in parts if p).lower().replace("/","\\")
+
+def _score_hit(image, parent, hit):
+    score = 1
+    links = ["time_window"]
+    img = _norm_key(image)
+    par = _norm_key(parent)
+    blob = hit.get("blob") or ""
+    img_name = Path(img).name if img else ""
+    if img_name and img_name in blob:
+        score += 2
+        links.append("image_name_in_related")
+    if img and len(img) > 12 and img in blob:
+        score += 3
+        links.append("image_path_in_related")
+    if par:
+        par_name = Path(par).name
+        if par_name and par_name in blob:
+                score += 1
+                links.append("parent_name_in_related")
+        return score,links
+
 def recent_related_alerts(window_seconds):
     if not EVENTS_FILE.exists():
         return []
@@ -166,19 +200,40 @@ def recent_related_alerts(window_seconds):
             related = True
             tag = "honeyfiles"
         if related:
-            hits.append({"tag": tag, "massage": msg, "source": src})
+            hits.append({
+                "tag": tag,
+                "massage": msg, 
+                "source": src, 
+                "blob": _event_blob(event),
+                })
     return hits
 
-def maybe_correlate(pid,ppid, image, parent, process_reasons, window_seconds):
+def maybe_correlate(pid,ppid, image, parent, process_reasons, cfg):
     if not process_reasons:
         return
+    window_seconds = cfg.get("correlate_window_seconds", 120)
+    min_score = cfg.get("correlate_min_score", 2)
     hits = recent_related_alerts(window_seconds)
     if not hits:
         return
     tags = []
+    link_bits = []
+    best = 0
     for hit in hits:
         if hit["tag"] not in tags:
             tags.append(hit["tag"])
+        score, links = _score_hit(image, parent, hit)
+        if score > best:
+            best = score
+        for item in links:
+            if item not in link_bits:
+                link_bits.append("honey_and_persistence")
+    if "honeyfiles" in tags and "persistence" in tags:
+        best += 2
+        if "honey_and_persistence" not in link_bits:
+            link_bits.append(item)
+    if best < min_score:
+        return
     log_event(
         "alert",
         "Correlated host activity",
@@ -188,6 +243,8 @@ def maybe_correlate(pid,ppid, image, parent, process_reasons, window_seconds):
         parent=parent,
         process_reasons=",".join(process_reasons),
         related =",".join(tags),
+        links = ",".join(link_bits),
+        score=best,
         window_seconds= int(window_seconds),
         source="correlation",
     )
@@ -438,5 +495,5 @@ class ProcessWatch:
             full,
             parent,
             corr_reasons,
-            self.cfg.get("correlate_window_seconds", 120)
+            self.cfg,
         )
