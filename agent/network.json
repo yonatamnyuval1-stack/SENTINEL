@@ -1,0 +1,39 @@
+{
+    "poll_seconds": 3,
+    "warm_up_hours": 48,
+    "min_count": 2,
+    "alert_on_unknown": true,
+    "alert_on_public_only": true,
+    "save_every": 20,
+    "correlate_window_seconds": 120,
+    "correlate_min_score": 2,
+    "ignore_image_prefixes": [
+        "svchost.exe",
+        "searchindexer.exe",
+        "onedrive.exe",
+        "msedge.exe",
+        "chrome.exe",
+        "firefox.exe"
+    ],
+    "ignore_remote_prefixes": [
+        "127.",
+        "10.",
+        "192.168.",
+        "172.16.",
+        "172.17.",
+        "172.18.",
+        "172.19.",
+        "172.20.",
+        "172.21.",
+        "172.22.",
+        "172.23.",
+        "172.24.",
+        "172.25.",
+        "172.26.",
+        "172.27.",
+        "172.28.",
+        "172.29.",
+        "172.30.",
+        "172.31."
+    ]
+}
