@@ -7,13 +7,17 @@
     "save_every": 20,
     "correlate_window_seconds": 120,
     "correlate_min_score": 2,
-    "ignore_image_prefixes": [
+    "ignore_image_names": [
         "svchost.exe",
         "searchindexer.exe",
         "onedrive.exe",
         "msedge.exe",
         "chrome.exe",
         "firefox.exe"
+    ],
+    "ignore_image_prefixes": [
+        "c:\\windows\\system32\\",
+        "c:\\windows\\syswow64\\"
     ],
     "ignore_remote_prefixes": [
         "127.",

@@ -9,7 +9,7 @@ from pathlib import Path
 from event import EVENTS_FILE, log_event
 DATA_DIR = Path(__file__).resolve().parent / "data"
 BASELINE_FILE = DATA_DIR / "network_baseline.json"
-CONFIG_PATH = Path(__file__).reslove().parent / "network.json"
+CONFIG_PATH = Path(__file__).resolve().parent / "network.json"
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 AF_INET = 2
 TCP_TABLE_OWNER_PID_CONNECTIONS = 4
@@ -20,9 +20,9 @@ SUSPICIOUS_PATH_PARTS = (
     "\\downloads\\",
     "\\appdata\\local\\temp\\",
 )
-SUSPICIOUS_PORTS = {4444,5555,6666,1234,31337,1337}
-class MIB_TCPROW_OWNER_PID(ctypes.Stracture):
-    _fields = [
+SUSPICIOUS_PORTS = {4444,5555,6666,1234}
+class MIB_TCPROW_OWNER_PID(ctypes.Structure):
+    _fields_ = [
         ("dwState", wintypes.DWORD),
         ("dwLocalAddr", wintypes.DWORD),
         ("dwLocalPort", wintypes.DWORD),
@@ -35,8 +35,8 @@ def load_network_config():
         "poll_seconds": 3,
         "warm_up_hours": 48,
         "min_count": 2,
-        "alert_on_unknown": True
-        "alert_on_public_only": True
+        "alert_on_unknown": True,
+        "alert_on_public_only": True,
         "save_every": 20,
         "correlate_window_seconds": 120,
         "correlate_min_score": 2,
@@ -78,7 +78,7 @@ def load_network_config():
     if not CONFIG_PATH.exists():
         return cfg
     try:
-        raw = json.loads(CONFIG_PATH.read_texts(encoding="utf-8"))
+        raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return cfg
     for key in (
@@ -102,7 +102,7 @@ def load_network_config():
         cfg["ignore_remote_prefixes"] = [str(x) for x in raw["ignore_remote_prefixes"]]
     return cfg
 
- def _norm_key(key):
+def _norm_key(path):
     return str(path or "").strip().lower().replace("/","\\")
 
 def _ignored_image(path, cfg):
@@ -115,7 +115,7 @@ def _ignored_image(path, cfg):
             return True
     for prefix in cfg.get("ignore_image_prefixes",[]):
         p = _norm_key(prefix)
-        if p and low.startwith(p): 
+        if p and low.startswith(p): 
             return True
     return False
 
@@ -149,7 +149,7 @@ def _is_public_ip(ip):
 def _ignored_remote(ip, cfg):
     if not ip or ip == "0.0.0.0":
         return True
-    for prefix in cfg.get("ignore_remote_prefiexs", []):
+    for prefix in cfg.get("ignore_remote_prefixes", []):
         if prefix and ip.startswith(prefix):
             return True
     return False
@@ -173,7 +173,7 @@ def load_baseline():
         "flows": raw.get("flows") if isinstance(raw.get("flows"), dict) else {},
     }
 
-def save_baseline():
+def save_baseline(data):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     BASELINE_FILE.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",
@@ -209,7 +209,7 @@ def _count_of(bucket, key):
 
 def _query_image(pid):
     try:
-        pid_i = str(pid)
+        pid_i = int(pid)
     except (TypeError, ValueError):
         return ""
     if pid_i <= 0:
@@ -224,7 +224,7 @@ def _query_image(pid):
         buf = ctypes.create_unicode_buffer(512)
         size = wintypes.DWORD(len(buf))
         ok = kernel32.QueryFullProcessImageNameW(
-            handle, 0, buf, ctypes.buyref(size)
+            handle, 0, buf, ctypes.byref(size)
         )
         if not ok:
             return ""
@@ -234,9 +234,9 @@ def _query_image(pid):
     finally:
         kernel32.CloseHandle(handle)
 
-def _list_ctp_rows():
+def _list_tcp_rows():
     iphlpapi = ctypes.WinDLL("iphlpapi")
-    size = ctypes.DWORD(0)
+    size = wintypes.DWORD(0)
     iphlpapi.GetExtendedTcpTable(
         None,
         ctypes.byref(size),
@@ -258,20 +258,22 @@ def _list_ctp_rows():
     )
     if ret != 0:
         return []
-        count = ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD))[0]
-        offset = ctypes.sizeof(MIB_TCPROW_OWNER_PID)
-        rows = []
-        row_size = ctypes.sizeof(MIB_TCPROW_OWNER_PID)
-        for i in range(count):
-            start = offset + (i * row_size)
-            row = MIB_TCPROW_OWNER_PID.from_buffer_copy(buf.raw[start : start + row_size])
-            rows.append(row)
-        return rows
+    count = ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD))[0]
+    offset = ctypes.sizeof(wintypes.DWORD)
+    rows = []
+    row_size = ctypes.sizeof(MIB_TCPROW_OWNER_PID)
+    for i in range(count):
+        start = offset + (i * row_size)
+        row = MIB_TCPROW_OWNER_PID.from_buffer_copy(
+            buf.raw[start : start + row_size]
+            )
+        rows.append(row)
+    return rows
 
 def _suspicious_reasons(image, remote_ip, remote_port):
     reasons = []
     low = _norm_key(image)
-    for parts in SUSPICIOUS_PATH_PARTS:
+    for part in SUSPICIOUS_PATH_PARTS:
         if part in low:
             reasons.append("suspicious_path_net")
             break
@@ -279,6 +281,9 @@ def _suspicious_reasons(image, remote_ip, remote_port):
         port_i = int(remote_port)
     except( TypeError, ValueError):
         port_i = 0
+    if port_i in SUSPICIOUS_PORTS:
+        reasons.append("suspicious_port")
+    return reasons
 
 def _event_ts(event):
     raw = event.get("time") or ""
@@ -288,10 +293,10 @@ def _event_ts(event):
         return 0.0
 
 def _read_recent_hits(window_seconds):
-    if not EVENT_FILE.exists():
+    if not EVENTS_FILE.exists():
         return []
     try:
-        lines = EVENT_FILE.read_text(encoding = "utf-8").splitlines()[-800:]
+        lines = EVENTS_FILE.read_text(encoding = "utf-8").splitlines()[-800:]
     except OSError:
         return []
     now = time.time()
@@ -312,7 +317,7 @@ def _read_recent_hits(window_seconds):
         if src in ("honeyfiles", "windows_audit", "persistence", "process_etw", "correlation"):
             tag = {
                 "honeyfiles": "honeyfiles",
-                "window_audits": "honeyfiles",
+                "window_audit": "honeyfiles",
                 "persistence": "persistence",
                 "process_etw": "process",
                 "correlation": "correlation",
@@ -320,8 +325,8 @@ def _read_recent_hits(window_seconds):
             hits.append(
                 {
                     "tag": tag,
-                    "pid": str(event.get("pid") or "")
-                    "image": _norm_key(event.get("image") or event.get("process") or "")
+                    "pid": str(event.get("pid") or ""),
+                    "image": _norm_key(event.get("image") or event.get("process") or ""),
                     "blob": " ".join(
                         str(x)
                         for x in (
@@ -356,3 +361,172 @@ def _score_net_hit(pid, image, remote_ip, hit):
         score += 2
         links.append("ip_in_related")
     return score,links
+
+def maybe_correlate(pid, image, remote_ip, remote_port, reasons, cfg):
+    window_seconds = cfg.get("correlate_window_seconds", 120)
+    min_score = cfg.get("correlate_min_score", 2)
+    hits = _read_recent_hits(window_seconds)
+    if not hits:
+        return 
+    tags = []
+    link_bits = []
+    best = 0
+    for hit in hits:
+        if hit["tag"] not in tags:
+            tags.append(hit["tag"])
+        score, links = _score_net_hit(pid, image, remote_ip, hit)
+        if score > best:
+            best = score
+        for item in links:
+            if item not in link_bits:
+                link_bits.append(item)
+    if best < min_score:
+        return 
+    log_event(
+        "alert",
+        "network matched other alerts",
+        pid=str(pid),
+        image=image,
+        remote_ip=remote_ip,
+        remote_port=str(remote_port),
+        network_reasons=",".join(reasons),
+        related=",".join(tags),
+        links=",".join(link_bits),
+        score=best,
+        source="network_corr",
+    )
+
+class NetworkWatch:
+    def __init__(self):
+        self.cfg = load_network_config()
+        self.baseline = load_baseline()
+        self._stop = threading.Event()
+        self._thread = None
+        self._lock = threading.Lock()
+        self._since_save = 0
+        self._alerted = set()
+
+    def setup(self):
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._run, name="network-watch", daemon=True
+        )
+        self._thread.start()
+        mode = (
+            "warm_up"
+            if _in_warm_up(self.baseline, self.cfg["warm_up_hours"])
+            else "monitor"
+        )
+        log_event(
+            "system",
+            "network watch is up",
+            mode=mode,
+            baseline_flows=len(self.baseline.get("flows", {})),
+            path=str(BASELINE_FILE),
+        )
+    def stop(self):
+        self._stop.set()
+        with self._lock:
+            save_baseline(self.baseline)
+        if self._thread is not None:
+            self._thread.join(timeout=5)
+            self._thread = None
+    def _run(self):
+        while not self._stop.is_set():
+            try:
+                self._tick()
+            except Exception as exc:
+                log_event("system", "network tick failed", error=str(exc))
+            self._stop.wait(self.cfg["poll_seconds"])
+
+    def _tick(self):
+        rows = _list_tcp_rows()
+        live_keys = set()
+        for row in rows:
+            if int(row.dwState) != MIB_TCP_STATE_ESTABLISHED:
+                continue
+            remote_ip = _ip_to_str(row.dwRemoteAddr)
+            remote_port = _port_to_int(row.dwRemotePort)
+            if remote_ip == "0.0.0.0":
+                continue
+            if self.cfg.get("alert_on_public_only", True) and not _is_public_ip(remote_ip):
+                continue
+            if _ignored_remote(remote_ip, self.cfg):
+                continue
+            pid = int(row.dwOwningPid)
+            image = _query_image(pid)
+            if _ignored_image(image, self.cfg):
+                continue
+            flow_key = _norm_key(image) + "|" + remote_ip + "|" + str(remote_port)
+            dedupe = str(pid) + "|" + flow_key
+            live_keys.add(dedupe)
+            if dedupe in self._alerted:
+                continue
+            self._handle_flow(pid, image, remote_ip, remote_port, flow_key, dedupe)
+        if len(self._alerted) > 8000:
+            self._alerted = self._alerted.intersection(live_keys)
+    
+    def _handle_flow(self, pid, image, remote_ip, remote_port, flow_key, dedupe):
+        reasons = _suspicious_reasons(image, remote_ip, remote_port)
+        with self._lock:
+            warm = _in_warm_up(self.baseline, self.cfg["warm_up_hours"])
+            flows = self.baseline.setdefault("flows", {})
+            before = _count_of(flows, flow_key)
+            if warm:
+                _touch_entry(flows, flow_key)
+            elif before >0:
+                _touch_entry(flows, flow_key)
+            self._since_save += 1
+            if self._since_save >= self.cfg["save_every"]:
+                save_baseline(self.baseline)
+                self._since_save = 0
+        log_event(
+            "system",
+            "outbound tcp",
+            pid=str(pid),
+            image=image,
+            remote_ip=remote_ip,
+            remote_port=str(remote_port),
+            mode="warm_up" if warm else "monitor",
+            source="network_tcp",
+        )
+        fired = False
+        if reasons:
+            log_event(
+                "alert",
+                "weird outbound connection",
+                pid=str(pid),
+                image=image,
+                remote_ip=remote_ip,
+                remote_port=str(remote_port),
+                reasons=",".join(reasons),
+                source="network_tcp",
+            )
+            fired = True
+        unknown = False
+        if (
+            (not warm)
+            and self.cfg.get("alert_on_unknown", True)
+            and before < self.cfg["min_count"]
+        ):
+            log_event(
+                "alert",
+                "new outbound path",
+                pid=str(pid),
+                image=image,
+                remote_ip=remote_ip,
+                remote_port=str(remote_port),
+                reasons="unknown_flow",
+                flow_count=before,
+                source="network_tcp",
+            )
+            fired = True
+            unknown = True
+        self._alerted.add(dedupe)
+        corr_reasons = list(reasons)
+        if unknown:
+            corr_reasons.append("unknown_flow")
+        if fired or corr_reasons:
+            maybe_correlate(
+                pid, image, remote_ip, remote_port, corr_reasons, self.cfg
+            )
