@@ -32,11 +32,12 @@ class MIB_TCPROW_OWNER_PID(ctypes.Structure):
     ]
 def load_network_config():
     cfg = {
-        "poll_seconds": 3,
+        "poll_seconds": 5,
         "warm_up_hours": 48,
         "min_count": 2,
         "alert_on_unknown": True,
         "alert_on_public_only": True,
+        "log_connections": False,
         "save_every": 20,
         "correlate_window_seconds": 120,
         "correlate_min_score": 2,
@@ -57,22 +58,6 @@ def load_network_config():
             "127.",
             "10.",
             "192.168.",
-            "172.16.",
-            "172.17.",
-            "172.18.",
-            "172.19.",
-            "172.20.",
-            "172.21.",
-            "172.22.",
-            "172.23.",
-            "172.24.",
-            "172.25.",
-            "172.26.",
-            "172.27.",
-            "172.28.",
-            "172.29.",
-            "172.30.",
-            "172.31.",
         ],
     }
     if not CONFIG_PATH.exists():
@@ -94,6 +79,8 @@ def load_network_config():
     for key in ("alert_on_unknown", "alert_on_public_only"):
         if key in raw:
             cfg[key] = bool(raw[key])
+    if "log_connections" in raw:
+        cfg["log_connections"] = bool(raw["log_connections"])
     if isinstance(raw.get("ignore_image_prefixes"), list):
         cfg["ignore_image_prefixes"] = [str(x) for x in raw["ignore_image_prefixes"]]
     if isinstance(raw.get("ignore_image_names"), list):
@@ -457,7 +444,10 @@ class NetworkWatch:
             image = _query_image(pid)
             if _ignored_image(image, self.cfg):
                 continue
-            flow_key = _norm_key(image) + "|" + remote_ip + "|" + str(remote_port)
+            if remote_port in(80,443):
+                flow_key = _norm_key(image) + "|" + remote_ip
+            else:
+                flow_key = _norm_key(image) + "|" + remote_ip + "|" + str(remote_port)
             dedupe = str(pid) + "|" + flow_key
             live_keys.add(dedupe)
             if dedupe in self._alerted:
@@ -480,16 +470,17 @@ class NetworkWatch:
             if self._since_save >= self.cfg["save_every"]:
                 save_baseline(self.baseline)
                 self._since_save = 0
-        log_event(
-            "system",
-            "outbound tcp",
-            pid=str(pid),
-            image=image,
-            remote_ip=remote_ip,
-            remote_port=str(remote_port),
-            mode="warm_up" if warm else "monitor",
-            source="network_tcp",
-        )
+        if self.cfg.get("log_connections", False):
+            log_event(
+                "system",
+                "outbound tcp",
+                pid=str(pid),
+                image=image,
+                remote_ip=remote_ip,
+                remote_port=str(remote_port),
+                mode="warm_up" if warm else "monitor",
+                source="network_tcp",
+            )
         fired = False
         if reasons:
             log_event(
@@ -526,7 +517,7 @@ class NetworkWatch:
         corr_reasons = list(reasons)
         if unknown:
             corr_reasons.append("unknown_flow")
-        if fired or corr_reasons:
+        if fired:
             maybe_correlate(
                 pid, image, remote_ip, remote_port, corr_reasons, self.cfg
             )
