@@ -16,6 +16,7 @@
         <button type="button" class="nav-item" data-view="honey">Honeyfiles</button>
         <button type="button" class="nav-item" data-view="persistence">Persistence</button>
         <button type="button" class="nav-item" data-view="process">Process</button>
+        <button type="button" class="nav-item" data-view="network">Network</button>
       </nav>
     </aside>
     <section class="main">
@@ -127,6 +128,37 @@
     </thead>
     <tbody id="process-corr">
       <tr><td colspan="4" class="empty">No correlated alerts yet.</td></tr>
+    </tbody>
+  </table>
+</div>
+<div id="panel-network" class="hidden">
+  <div class="honey-meta" id="network-meta">—</div>
+  <h2 class="block-title">Network alerts</h2>
+  <table class="log-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Massage</th>
+        <th>Remote</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody id="network-alerts">
+      <tr><td colspan="4" class="empty">No network alerts yet.</td></tr>
+    </tbody>
+  </table>
+  <h2 class="block-title">Linked stuff</h2>
+  <table class="log-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Massage</th>
+        <th>Remote</th>
+        <th>Detail</th>
+      </tr>
+    </thead>
+    <tbody id="network-linked">
+      <tr><td colspan="4" class="empty">Nothing linked yet.</td></tr>
     </tbody>
   </table>
 </div>

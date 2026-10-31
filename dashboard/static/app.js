@@ -15,11 +15,16 @@ const panelProcess = document.getElementById("panel-process")
 const processMeta = document.getElementById("process-meta")
 const processAlerts = document.getElementById("process-alerts")
 const processCorr = document.getElementById("process-corr")
+const panelNetwork = document.getElementById("panel-network")
+const networkMeta = document.getElementById("network-meta")
+const networkAlerts = document.getElementById("network-alerts")
+const networkLinked = document.getElementById("network-linked")
 let view = "logs"; 
 let events = [];
 let honey = null;
 let persist = null;
 let processData = null;
+let networkData = null;
 
 function msg(event) {
   return event.message || event.massage || "";
@@ -295,6 +300,91 @@ function renderProcess(){
   }
 }
 
+function networkDetail(event){
+  const bits = [];
+  if (event.image) bits.push("image=" + event.image);
+  if (event.pid) bits.push("pid=" + event.pid);
+  if (event.reasons) bits.push("reasons=" + event.reasons);
+  if (event.related) bits.push("related=" + event.related);
+  if (event.links) bits.push("links=" + event.links);
+  return bits.join(" | ") || detail(event);
+}
+
+function renderNetwork(){
+  if (!networkData || !networkData.ok) {
+    networkMeta.textContent = "no network data";
+    networkAlerts.innerHTML = 
+      '<tr><td colspan="4" class="empty">—</td></tr>';
+    networkLinked.innerHTML = 
+      '<tr><td colspan="4" class="empty">—</td></tr>';
+    return;
+  }
+  networkMeta.textContent =
+    "mode:" +
+    (networkData.mode || "?") +
+    "\n" +
+    "baseline flows: " +
+    (networkData.flows || 0) +
+    "\n" +
+    "baseline started: " +
+    (networkData.started_at || "?");
+  const alerts = networkData.alerts || [];
+  if (!alerts.length) {
+    networkAlerts.innerHTML = 
+      '<tr><td colspan="4" class="empty">No network alerts yet.</td></tr>';
+  } else {
+    networkAlerts.innerHTML = alerts
+      .map((event) => {
+        const remote =
+          (event.remote_ip || "") +
+          (event.remote_port ? ":" + event.remote_port : "");
+        return (
+          '<tr class="row-alert">' +
+          "<td>" +
+          esc(fmtTime(event.time)) +
+          "</td>" +
+          "<td>" +
+          esc(msg(event)) +
+          "</td>" +
+          "<td>" +
+          esc(remote) +
+          "</td>" +
+          "<td>" +
+          esc(networkDetail(event)) +
+          "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+  }
+  const linked = networkData.linked || [];
+  if (!linked.length) {
+    networkLinked.innerHTML = 
+      '<tr><td colspan="4" class="empty">Nothing linked yet.</td></tr>';
+  } else {
+    networkLinked.innerHTML = linked
+      .map((event) => {
+        return (
+          '<tr class="row-alert">' +
+          "<td>" +
+          esc(fmtTime(event.time)) +
+          "</td>" +
+          "<td>" +
+          esc(msg(event)) +
+          "</td>" +
+          "<td>" +
+          esc(event.related || "") +
+          "</td>" +
+          "<td>" +
+          esc(networkDetail(event)) +
+          "</td>" +
+          "</tr>" 
+        );
+      })
+      .join("");
+  }
+}
+
 function renderLogs() {
   const list = visibleEvents();
   if (!list.length) {
@@ -339,24 +429,29 @@ function render() {
     honey: "Honeyfiles",
     persistence: "Persistence",
     process: "Process",
+    network: "Network",
   };
   viewTitle.textContent = titles[view] || "Logs";
   const showHoney = view === "honey";
   const showPersist = view === "persistence";
   const showProcess = view === "process";
+  const showNetwork = view === "network";
   panelLogs.classList.toggle(
     "hidden",
-    showHoney || showPersist || showProcess
+    showHoney || showPersist || showProcess || showNetwork
   );
   panelHoney.classList.toggle("hidden", !showHoney);
   panelPersist.classList.toggle("hidden", !showPersist);
   panelProcess.classList.toggle("hidden", !showProcess);
+  panelNetwork.classList.toggle("hidden", !showNetwork);
   if (showHoney) {
     renderHoney();
   } else if(showPersist){
     renderPersist();
   } else if(showProcess){
     renderProcess();
+  } else if(showNetwork){
+    renderNetwork();
   }
   else {
     renderLogs();
@@ -373,17 +468,19 @@ function setView(next) {
 
 async function refresh() {
   try {
-    const [evRes, honeyRes, persistRes, processRes] = await Promise.all([
+    const [evRes, honeyRes, persistRes, processRes, networkRES] = await Promise.all([
       fetch("/api/events?limit=500", { cache: "no-store" }),
       fetch("/api/honey", { cache: "no-store" }),
       fetch("/api/persistence", { cache: "no-store"}),
       fetch("/api/process", { cache: "no-store"}),
+      fetch("/api/network", { cache: "no-store"}),
     ]);
     const data = await evRes.json();
     events = data.events || [];
     honey = await honeyRes.json();
     persist = await persistRes.json();
     processData = await processRes.json();
+    networkData = await networkRES.json();
     if (view === "honey") {
       const n = (honey && honey.alerts && honey.alerts.length) || 0;
       statusLine.textContent = n + " honey alerts";
@@ -394,6 +491,10 @@ async function refresh() {
       const a = (processData && processData.alerts && processData.alerts.length) || 0;
       const c = (processData && processData.correlated && processData.correlated.length) || 0;
       statusLine.textContent = a +"process, " + c + "correlated";
+    } else if(view === "network"){
+      const a = (networkData && networkData.alerts && networkData.alerts.length) || 0;
+      const c = (networkData && networkData.linked && networkData.linked.length) || 0;
+      statusLine.textContent = a+"network, " + c + "linked";
     } else {
       const logsCount = events.filter((e) => e.kind !== "heartbeat").length;
       const hbCount = events.filter((e) => e.kind === "heartbeat").length;

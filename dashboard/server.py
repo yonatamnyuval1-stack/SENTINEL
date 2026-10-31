@@ -7,6 +7,7 @@ STATIC_DIR = ROOT/ "static"
 EVENTS_FILE = ROOT.parent / "agent" / "data" / "events.jsonl"
 HONEY_JSON = ROOT.parent / "agent" / "honey.json"
 PROCESS_BASELINE = ROOT.parent / "agent" / "data" / "process_baseline.json"
+NETWORK_BASELINE = ROOT.parent / "agent" / "data" / "network_baseline.json"
 HOST = "127.0.0.1"
 PORT = 8787
 def read_events(limit=200):
@@ -168,6 +169,44 @@ def build_process():
             "alerts": process_alerts,
             "correlated": corr_alerts,
         }
+
+def build_network():
+    mode = None
+    flows = 0
+    started_at = None
+    if NETWORK_BASELINE.exists():
+        try:
+            raw = json.loads(NETWORK_BASELINE.read_text(encoding="utf-8"))
+            flows = len(raw.get("flows") or "")
+            started_at = raw.get("started_at")
+        except (OSError, json.JSONDecodeError):
+            pass
+    alerts = []
+    linked = []
+    for event in read_events(limit=1200):
+        src = event.get("source") or ""
+        text = event.get("massage") or event.get("message") or ""
+        if event.get("kind") == "system" and "network watch is up" in text:
+            if mode is None:
+                mode = event.get("mode")
+            continue
+        if event.get("kind") != "alert":
+            continue
+        if src == "network_corr":
+            if len(linked) < 40:
+                linked.append(event)
+            continue
+        if src == "network_tcp":
+            if len(alerts) < 50:
+                alerts.append(event)
+    return{
+        "ok": True,
+        "mode": mode or "?",
+        "started_at": started_at,
+        "flows": flows,
+        "alerts": alerts,
+        "linked": linked,
+    }
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -187,6 +226,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(build_persistence())
         if parsed.path == "/api/process":
             return self._json(build_process())
+        if parsed.path == "/api/network":
+            return self._json(build_network())
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()
