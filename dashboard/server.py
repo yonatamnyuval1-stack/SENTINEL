@@ -8,6 +8,8 @@ EVENTS_FILE = ROOT.parent / "agent" / "data" / "events.jsonl"
 HONEY_JSON = ROOT.parent / "agent" / "honey.json"
 PROCESS_BASELINE = ROOT.parent / "agent" / "data" / "process_baseline.json"
 NETWORK_BASELINE = ROOT.parent / "agent" / "data" / "network_baseline.json"
+CONTROL_FILE =  ROOT.parent / "agent" / "data" / "control.json"
+HEARTBEAT_FILE = ROOT.parent / "agent" / "data" / "agent_heartbeat.json"
 HOST = "127.0.0.1"
 PORT = 8787
 def read_events(limit=200):
@@ -169,7 +171,6 @@ def build_process():
             "alerts": process_alerts,
             "correlated": corr_alerts,
         }
-
 def build_network():
     mode = None
     flows = 0
@@ -207,6 +208,41 @@ def build_network():
         "alerts": alerts,
         "linked": linked,
     }
+def build_control():
+    alive = False
+    last = None
+    if HEARTBEAT_FILE.exists():
+        try:
+            raw = json.loads(HEARTBEAT_FILE.read_text(encoding = "utf-8"))
+            last = raw.get("time")
+            if last:
+                from datetime import datetime,timezone
+                t = datetime.fromisoformat(last)
+                age = (datetime.now(timezone.utc) - t).total_seconds()
+                alive = age < 15
+        except(OSError, json.JSONDecodeError, ValueError):
+            pass
+    switches = {
+        "honey": True,
+        "persistence": True,
+        "process": True,
+        "network": True,
+    }
+    if CONTROL_FILE.exists():
+        try:
+            raw = json.loads(CONTROL_FILE.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                for key in switches:
+                    if key in raw:
+                        switches[key] = bool(raw[key])
+        except(OSError, json.JSONDecodeError):
+            pass
+    return {
+        "ok": True,
+        "alive": alive,
+        "last_seen": last,
+        "switches": switches,
+    }
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -228,9 +264,47 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(build_process())
         if parsed.path == "/api/network":
             return self._json(build_network())
+        if parsed.path == "/api/control":
+            return self._json(build_control())
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/control":
+            self.send_error(404)
+            return
+        length = int(self.headers.get("Content-Length", "0") or 0)
+        body = self.rfile.read(length) if length > 0 else b"{}"
+        try:
+            raw = json.loads(body.decode("utf-8"))
+        except json.JSONDecodeError:
+            return self._json({"ok": False, "error": "bad json"})
+        switches = {
+            "honey": True,
+            "persistence": True,
+            "process": True,
+            "network": True,
+        }
+        if CONTROL_FILE.exists():
+            try:
+                old = json.loads(CONTROL_FILE.read_text(encoding = "utf-8"))
+                if isinstance(old, dict):
+                    for key in switches:
+                        if key in old:
+                            switches[key] = bool(old[key])
+            except (OSError, json.JSONDecodeError):
+                pass
+        if isinstance(raw, dict):
+            for key in switches:
+                if key in raw:
+                    switches[key] = bool(raw[key])
+        CONTROL_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CONTROL_FILE.write_text(
+            json.dumps(switches, ensure_ascii=False, indent=2) + "\n",
+            encoding = "utf-8",
+        )
+        return self._json({"ok": True, "switches": switches})
     def _json(self, payload):
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(200)

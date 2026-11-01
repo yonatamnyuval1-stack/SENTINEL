@@ -19,12 +19,17 @@ const panelNetwork = document.getElementById("panel-network")
 const networkMeta = document.getElementById("network-meta")
 const networkAlerts = document.getElementById("network-alerts")
 const networkLinked = document.getElementById("network-linked")
+const panelControl = document.getElementById("panel-control")
+const controlMeta = document.getElementById("control-meta")
+const controlAlerts = document.getElementById("control-alerts")
+const controlRows = document.getElementById("control-rows");
 let view = "logs"; 
 let events = [];
 let honey = null;
 let persist = null;
 let processData = null;
 let networkData = null;
+let controlData = null;
 
 function msg(event) {
   return event.message || event.massage || "";
@@ -382,7 +387,58 @@ function renderNetwork(){
         );
       })
       .join("");
+  };
+}
+
+async function setSwitch(name, value) {
+  const body = {};
+  body[name] = value;
+  try{
+    await fetch("/api/control", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+  } catch(err) {
+    statusLine.textContent = "control post failed";
   }
+  refresh();
+}
+
+function renderControl(){
+  if (!controlData || !controlData.ok) {
+    controlMeta.textContent = "no control data";
+    controlRows.innerHTML = "";
+    return;
+  }
+  controlMeta.textContent =
+    "agent: " +
+    (controlData.alive ? "up" : "not seen yet");
+  const sw = controlData.switches || {};
+  const names = ["honey", "persistence", "process", "network"];
+  controlRows.innerHTML = names
+    .map((name) => {
+      const on  = !!sw[name];
+      return (
+        '<div style="margin:6px 0;">' +
+        "<label>" +
+        '<input type="checkbox" data-switch="' +
+        name +
+        '"' +
+        (on ? " checked" : "") +
+        ">" +
+        " " +
+        name +
+        "</label>" +
+        "</div>"
+      );
+    })
+    .join("");
+  controlRows.querySelectorAll("input[data-switch]").forEach((el) => {
+    el.addEventListener("change", ()=> {
+      setSwitch(el.getAttribute("data-switch"), el.checked);
+    });
+  });
 }
 
 function renderLogs() {
@@ -430,20 +486,23 @@ function render() {
     persistence: "Persistence",
     process: "Process",
     network: "Network",
+    control: "Control",
   };
   viewTitle.textContent = titles[view] || "Logs";
   const showHoney = view === "honey";
   const showPersist = view === "persistence";
   const showProcess = view === "process";
   const showNetwork = view === "network";
+  const showControl = view === "control";
   panelLogs.classList.toggle(
     "hidden",
-    showHoney || showPersist || showProcess || showNetwork
+    showHoney || showPersist || showProcess || showNetwork || showControl
   );
   panelHoney.classList.toggle("hidden", !showHoney);
   panelPersist.classList.toggle("hidden", !showPersist);
   panelProcess.classList.toggle("hidden", !showProcess);
   panelNetwork.classList.toggle("hidden", !showNetwork);
+  panelControl.classList.toggle("hidden", !showControl);
   if (showHoney) {
     renderHoney();
   } else if(showPersist){
@@ -452,6 +511,8 @@ function render() {
     renderProcess();
   } else if(showNetwork){
     renderNetwork();
+  } else if(showControl){
+    renderControl();
   }
   else {
     renderLogs();
@@ -468,12 +529,13 @@ function setView(next) {
 
 async function refresh() {
   try {
-    const [evRes, honeyRes, persistRes, processRes, networkRES] = await Promise.all([
+    const [evRes, honeyRes, persistRes, processRes, networkRES, controlRES] = await Promise.all([
       fetch("/api/events?limit=500", { cache: "no-store" }),
       fetch("/api/honey", { cache: "no-store" }),
       fetch("/api/persistence", { cache: "no-store"}),
       fetch("/api/process", { cache: "no-store"}),
       fetch("/api/network", { cache: "no-store"}),
+      fetch("/api/control", { cache: "no-store"}),
     ]);
     const data = await evRes.json();
     events = data.events || [];
@@ -481,6 +543,7 @@ async function refresh() {
     persist = await persistRes.json();
     processData = await processRes.json();
     networkData = await networkRES.json();
+    controlData = await controlRES.json();
     if (view === "honey") {
       const n = (honey && honey.alerts && honey.alerts.length) || 0;
       statusLine.textContent = n + " honey alerts";
