@@ -23,6 +23,7 @@ const panelControl = document.getElementById("panel-control")
 const controlMeta = document.getElementById("control-meta")
 const controlAlerts = document.getElementById("control-alerts")
 const controlRows = document.getElementById("control-rows");
+const controlLog = document.getElementById("control-log");
 let view = "logs"; 
 let events = [];
 let honey = null;
@@ -409,6 +410,8 @@ function renderControl(){
   if (!controlData || !controlData.ok) {
     controlMeta.textContent = "no control data";
     controlRows.innerHTML = "";
+    controlLog.innerHTML =
+      '<tr><td colspan="3" class="empty">—</td></tr>';
     return;
   }
   controlMeta.textContent =
@@ -439,6 +442,29 @@ function renderControl(){
       setSwitch(el.getAttribute("data-switch"), el.checked);
     });
   });
+  const recent = controlData.recent || [];
+  if (!recent.length) {
+    controlLog.innerHTML =
+      '<tr><td colspan="3" class="empty">Nothing yet.</td></tr>';
+  } else {
+    controlLog.innerHTML = recent
+      .map((event) => {
+        return (
+          "<tr>" +
+          "<td>" +
+          esc(fmtTime(event.time)) +
+          "</td>" +
+          "<td>" +
+          esc(event.kind || "") +
+          "</td>" +
+          "<td>" +
+          esc(msg(event)) +
+          "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+  }
 }
 
 function renderLogs() {

@@ -165,11 +165,30 @@
 </div>
 <div id="panel-control" class="hidden">
   <div class="honey-meta" id="control-meta">—</div>
-  <h2 class="block-title">on / off</h2>
-  <div id="control-rows"></div>
+  <div class="control-split">
+    <div class="control-left">
+      <h2 class="block-title">on / off</h2>
+      <div id="control-rows"></div>
+    </div>
+    <div class="control-right">
+      <h2 class="block-title">recent</h2>
+      <table class="log-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Kind</th>
+            <th>Massage</th>
+          </tr>
+        </thead>
+        <tbody id="control-log">
+          <tr><td colspan="3" class="empty">Nothing yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
     </section>
   </div>
   <script src="/app.js"></script>
-</body> 
-</html> 
+</body>
+</html>

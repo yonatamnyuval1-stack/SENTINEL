@@ -144,3 +144,24 @@ body{
   color: #8b0000;
   font-weight: bold;
 }
+.control-split{
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.control-left{
+  width: 200px;
+  flex-shrink: 0;
+}
+.control-right{
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .control-split {
+    flex-direction: column;
+  }
+  .control-left{
+    width: 100%;
+  }
+}

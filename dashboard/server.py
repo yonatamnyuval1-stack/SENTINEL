@@ -237,11 +237,26 @@ def build_control():
                         switches[key] = bool(raw[key])
         except(OSError, json.JSONDecodeError):
             pass
+    recent = []
+    for event in read_events(limit=800):
+        if event.get("kind") != "system":
+            continue
+        text = (event.get("massage") or event.get("message") or "").lower()
+        if (
+            text.endswith(" started")
+            or text.endswith(" stopped")
+            or "watch started" in text
+            or "watch is up" in text
+        ):
+            recent.append(event)
+            if len(recent) >= 40:
+                break
     return {
         "ok": True,
         "alive": alive,
         "last_seen": last,
         "switches": switches,
+        "recent": recent,
     }
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
