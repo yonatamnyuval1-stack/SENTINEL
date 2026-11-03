@@ -5,7 +5,7 @@ from honeyfiles import HoneyfileGuard
 from persistence import PersistenceWatch
 from process_watch import ProcessWatch
 from network_watch import NetworkWatch
-from control import bump_heartbeat, load_control
+from control import bump_heartbeat, load_control, want_running, clear_finished_mutes
 def main():
     print("SENTINEL starting...")
     print("Press Ctrl+C to stop.\n")
@@ -33,10 +33,12 @@ def main():
     try:
         while True:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            bump_heartbeat()
             wanted = load_control()
+            wanted, finished = clear_finished_mutes(wanted)
+            for name in finished:
+                log_event("system", name + " mute over")
             for name, watcher in parts.items():
-                want = bool(wanted.get(name, True))
+                want = want_running(wanted, name)
                 if want and not on[name]:
                     watcher.setup()
                     on[name] = True
@@ -45,6 +47,7 @@ def main():
                     watcher.stop()
                     on[name] = False
                     log_event("system", name + " stopped")
+            bump_heartbeat(on)
             print(f"[{now}] SENTINEL is running")
             time.sleep(3)
     except KeyboardInterrupt:

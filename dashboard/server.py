@@ -211,10 +211,22 @@ def build_network():
 def build_control():
     alive = False
     last = None
+    running = {
+        "honey": False,
+        "persistence": False,
+        "process": False,
+        "network": False,
+    }
+    muted_until = {}
     if HEARTBEAT_FILE.exists():
         try:
             raw = json.loads(HEARTBEAT_FILE.read_text(encoding = "utf-8"))
             last = raw.get("time")
+            raw_run = raw.get("running")
+            if isinstance(raw_run, dict):
+                for key in running:
+                    if key in raw_run:
+                        running[key] = bool(raw_run[key])
             if last:
                 from datetime import datetime,timezone
                 t = datetime.fromisoformat(last)
@@ -235,6 +247,11 @@ def build_control():
                 for key in switches:
                     if key in raw:
                         switches[key] = bool(raw[key])
+                raw_muted = raw.get("muted_until")
+                if isinstance(raw_muted, dict):
+                    for key in switches:
+                        if key in raw_muted and raw_muted[key]:
+                            muted_until[key] = str(raw_muted[key])
         except(OSError, json.JSONDecodeError):
             pass
     recent = []
@@ -257,6 +274,8 @@ def build_control():
         "last_seen": last,
         "switches": switches,
         "recent": recent,
+        "running": running,
+        "muted_until": muted_until,
     }
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -295,6 +314,7 @@ class Handler(SimpleHTTPRequestHandler):
             raw = json.loads(body.decode("utf-8"))
         except json.JSONDecodeError:
             return self._json({"ok": False, "error": "bad json"})
+        muted_until = {}
         switches = {
             "honey": True,
             "persistence": True,
@@ -308,18 +328,41 @@ class Handler(SimpleHTTPRequestHandler):
                     for key in switches:
                         if key in old:
                             switches[key] = bool(old[key])
+                    raw_muted = old.get("muted_until")
+                    if isinstance(raw_muted, dict):
+                        for key in switches:
+                            if key in raw_muted and raw_muted[key]:
+                                muted_until[key] = str(raw_muted[key])
             except (OSError, json.JSONDecodeError):
                 pass
         if isinstance(raw, dict):
             for key in switches:
                 if key in raw:
                     switches[key] = bool(raw[key])
+            mute_minutes = raw.get("mute_minutes")
+            if isinstance(mute_minutes, dict):
+                from datetime import datetime, timedelta, timezone
+                now = datetime.now(timezone.utc)
+                for key, mins in mute_minutes.items():
+                    if key not in switches:
+                        continue
+                    try:
+                        m = int(mins)
+                    except (TypeError, ValueError):
+                        continue
+                    if m <= 0:
+                        continue
+                    muted_until[key] = (now + timedelta(minutes=m)).isoformat()
         CONTROL_FILE.parent.mkdir(parents=True, exist_ok=True)
+        payload = dict(switches)
+        payload["muted_until"] = muted_until
         CONTROL_FILE.write_text(
-            json.dumps(switches, ensure_ascii=False, indent=2) + "\n",
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding = "utf-8",
         )
-        return self._json({"ok": True, "switches": switches})
+        return self._json(
+            {"ok": True, "switches": switches, "muted_until": muted_until}
+        )
     def _json(self, payload):
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(200)

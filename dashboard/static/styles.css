@@ -165,3 +165,19 @@ body{
     width: 100%;
   }
 }
+.control-rows{
+  margin: 8px 0;
+  line-height: 1.4;
+}
+.control-mute-btns button{
+  margin-right: 6px;
+  margin-top: 4px;
+  border: 1px solid #bdbdbd;
+  background: #f7f7f7;
+  font: inherit;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.control-mute-btns button:hover{
+  background: #e4e4e4;
+}

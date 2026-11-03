@@ -23,6 +23,7 @@ const panelControl = document.getElementById("panel-control")
 const controlMeta = document.getElementById("control-meta")
 const controlAlerts = document.getElementById("control-alerts")
 const controlRows = document.getElementById("control-rows");
+const controlMutes = document.getElementById("control-mutes")
 const controlLog = document.getElementById("control-log");
 let view = "logs"; 
 let events = [];
@@ -406,10 +407,25 @@ async function setSwitch(name, value) {
   refresh();
 }
 
+async function muteFor(name, minutes) {
+  const body = { mute_minutes: {} };
+  body.mute_minutes[names] = minutes;
+  try {
+    await fetch("/api/control", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    statusLine.textContent = "control post failed";
+  }
+  refresh();
+}
 function renderControl(){
   if (!controlData || !controlData.ok) {
     controlMeta.textContent = "no control data";
     controlRows.innerHTML = "";
+    if (controlMutes) controlMutes.innerHTML = "";
     controlLog.innerHTML =
       '<tr><td colspan="3" class="empty">—</td></tr>';
     return;
@@ -418,12 +434,20 @@ function renderControl(){
     "agent: " +
     (controlData.alive ? "up" : "not seen yet");
   const sw = controlData.switches || {};
+  const running = controlData.running || {};
+  const mutedUntil = controlData.muted_until || {};
   const names = ["honey", "persistence", "process", "network"];
   controlRows.innerHTML = names
     .map((name) => {
       const on  = !!sw[name];
+      const run = !!running[name];
       return (
         '<div style="margin:6px 0;">' +
+        "<div>running:" +
+        (run
+          ? '<span class="flag-yes">yes</span>'
+          : '<span class="flag-no">no</span>' ) +
+        "</div>" +
         "<label>" +
         '<input type="checkbox" data-switch="' +
         name +
@@ -442,6 +466,41 @@ function renderControl(){
       setSwitch(el.getAttribute("data-switch"), el.checked);
     });
   });
+  if (controlMutes) {
+    controlMutes.innerHTML = names
+      .map((name) => {
+        let muteLine = "";
+        if (mutedUntil[name]) {
+          muteLine = 
+            "<div>until " + esc(fmtTime(mutedUntil[name])) + "</div>";
+        }
+        return (
+        '<div class="control-row">' +
+        "<div>" +
+        name +
+        "</div>" +
+        muteLine +
+        '<div class="control-mute-btns">' +
+        '<button type="button" data-mute="' +
+        name +
+        '" data-mins="15">15m</button>' +
+        '<button type="button" data-mute="' +
+        name +
+        '" data-mins="60">1h</button>' +
+        "</div>" +
+        "</div>"
+        );
+      })
+      .join("");
+    controlMutes.querySelectorAll("button[data-mute]").forEach((el) => {
+      el.addEventListener("click", () => {
+        muteFor(
+          el.getAttribute("data-mute"),
+          parseInt(el.getAttribute("data-mins"), 10)
+        );
+      });
+    });
+  }
   const recent = controlData.recent || [];
   if (!recent.length) {
     controlLog.innerHTML =
