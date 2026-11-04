@@ -23,7 +23,6 @@ const panelControl = document.getElementById("panel-control")
 const controlMeta = document.getElementById("control-meta")
 const controlAlerts = document.getElementById("control-alerts")
 const controlRows = document.getElementById("control-rows");
-const controlMutes = document.getElementById("control-mutes")
 const controlLog = document.getElementById("control-log");
 let view = "logs"; 
 let events = [];
@@ -409,7 +408,7 @@ async function setSwitch(name, value) {
 
 async function muteFor(name, minutes) {
   const body = { mute_minutes: {} };
-  body.mute_minutes[names] = minutes;
+  body.mute_minutes[name] = minutes;
   try {
     await fetch("/api/control", {
       method: "POST",
@@ -425,79 +424,80 @@ function renderControl(){
   if (!controlData || !controlData.ok) {
     controlMeta.textContent = "no control data";
     controlRows.innerHTML = "";
-    if (controlMutes) controlMutes.innerHTML = "";
     controlLog.innerHTML =
       '<tr><td colspan="3" class="empty">—</td></tr>';
     return;
   }
-  controlMeta.textContent =
-    "agent: " +
-    (controlData.alive ? "up" : "not seen yet");
   const sw = controlData.switches || {};
   const running = controlData.running || {};
   const mutedUntil = controlData.muted_until || {};
   const names = ["honey", "persistence", "process", "network"];
-  controlRows.innerHTML = names
-    .map((name) => {
-      const on  = !!sw[name];
-      const run = !!running[name];
-      return (
-        '<div style="margin:6px 0;">' +
-        "<div>running:" +
-        (run
-          ? '<span class="flag-yes">yes</span>'
-          : '<span class="flag-no">no</span>' ) +
-        "</div>" +
-        "<label>" +
-        '<input type="checkbox" data-switch="' +
-        name +
-        '"' +
-        (on ? " checked" : "") +
-        ">" +
-        " " +
-        name +
-        "</label>" +
-        "</div>"
-      );
-    })
-    .join("");
-  controlRows.querySelectorAll("input[data-switch]").forEach((el) => {
-    el.addEventListener("change", ()=> {
-      setSwitch(el.getAttribute("data-switch"), el.checked);
-    });
-  });
-  if (controlMutes) {
-    controlMutes.innerHTML = names
+  const runList = names.filter((n) => !!running[n]).join(" ") || "none";
+  controlMeta.textContent =
+    "agent: " +
+    (controlData.alive ? "up" : "not seen yet") +
+    "\n" +
+    "running: " +
+    runList;
+
+  const typing = 
+  document.activeElement &&
+  document.activeElement.classList &&
+  document.activeElement.classList.contains("mute-mins");
+  if (!typing) {
+    controlRows.innerHTML = names
       .map((name) => {
-        let muteLine = "";
+        const on = !!sw[name];
+        let untilLine = "";
         if (mutedUntil[name]) {
-          muteLine = 
+          untilLine =
             "<div>until " + esc(fmtTime(mutedUntil[name])) + "</div>";
         }
         return (
-        '<div class="control-row">' +
-        "<div>" +
-        name +
-        "</div>" +
-        muteLine +
-        '<div class="control-mute-btns">' +
-        '<button type="button" data-mute="' +
-        name +
-        '" data-mins="15">15m</button>' +
-        '<button type="button" data-mute="' +
-        name +
-        '" data-mins="60">1h</button>' +
-        "</div>" +
-        "</div>"
+          '<div class="control-row">' +
+          "<label>" +
+          '<input type="checkbox" data-switch="' +
+          name +
+          '"' +
+          (on ? " checked" : "") +
+          "> " +
+          name +
+          "</label>" +
+          untilLine +
+          "<div>" +
+          '<input type="number" min="1" step="1" class="mute-mins" data-mute="' +
+          name +
+          '" placeholder="min"> min ' +
+          '<button type="button" class="mute-go" data-mute="' +
+          name +
+          '">ok</button>' +
+          "</div>" +
+          "</div>"
         );
       })
       .join("");
-    controlMutes.querySelectorAll("button[data-mute]").forEach((el) => {
+    controlRows.querySelectorAll("input[data-switch]").forEach((el) => {
+      el.addEventListener("change", () => {
+        setSwitch(el.getAttribute("data-switch"), el.checked);
+      });
+    });
+    controlRows.querySelectorAll("button.mute-go").forEach((el) => {
       el.addEventListener("click", () => {
-        muteFor(
-          el.getAttribute("data-mute"),
-          parseInt(el.getAttribute("data-mins"), 10)
+        const name = el.getAttribute("data-mute");
+        const box = controlRows.querySelector(
+          'input.mute-mins[data-mute="' + name + '"]'
         );
+        const mins = box ? parseInt(box.value, 10) : 0;
+        if (!mins || mins < 1) return;
+        muteFor(name, mins);
+      });
+    });
+    controlRows.querySelectorAll("input.mute-mins").forEach((el) => {
+      el.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter") return;
+        const mins = parseInt(el.value, 10);
+        if (!mins || mins < 1) return;
+        muteFor(el.getAttribute("data-mute"), mins);
       });
     });
   }
