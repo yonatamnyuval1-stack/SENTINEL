@@ -18,6 +18,7 @@
         <button type="button" class="nav-item" data-view="process">Process</button>
         <button type="button" class="nav-item" data-view="network">Network</button>
         <button type="button" class="nav-item" data-view="control">Control</button>
+        <button type="button" class="nav-item" data-view="incidents">Incidents</button>
       </nav>
     </aside>
     <section class="main">
@@ -162,6 +163,25 @@
       <tr><td colspan="4" class="empty">Nothing linked yet.</td></tr>
     </tbody>
   </table>
+</div>
+<div id="panel-incidents" class="hidden">
+  <div class="honey-meta" id="incident-meta">—</div>
+  <h2 class="block-title">Stories</h2>
+  <table class="log-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Massage</th>
+        <th>Related</th>
+        <th>Image</th>
+      </tr>
+    </thead>
+    <tbody id="incident-list">
+      <tr><td colspan="4" class="empty">No stories yet</td></tr>
+    </tbody>
+  </table>
+  <h2 class="block-title">Timeline</h2>
+  <pre id="incident-timeline" class="incident-timeline">pick a row</pre>
 </div>
 <div id="panel-control" class="hidden">
   <div class="honey-meta" id="control-meta">—</div>

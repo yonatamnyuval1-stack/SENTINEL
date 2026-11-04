@@ -208,6 +208,21 @@ def build_network():
         "alerts": alerts,
         "linked": linked,
     }
+def build_incident():
+    items = []
+    for event in read_events(limit=1500):
+        if event.get("kind") != "alert":
+            continue
+        if (event.get("source") or "") != "incident":
+            continue
+        items.append(event)
+        if len(items) >= 40:
+            break
+    return {
+        "ok": True,
+        "count": len(items),
+        "items": items,
+    }
 def build_control():
     alive = False
     last = None
@@ -300,6 +315,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(build_network())
         if parsed.path == "/api/control":
             return self._json(build_control())
+        if parsed.path == "/api/incident":
+            return self._json(build_incident())
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()

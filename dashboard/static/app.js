@@ -24,6 +24,10 @@ const controlMeta = document.getElementById("control-meta")
 const controlAlerts = document.getElementById("control-alerts")
 const controlRows = document.getElementById("control-rows");
 const controlLog = document.getElementById("control-log");
+const incidentMeta = document.getElementById("incident-meta")
+const panelIncidents = document.getElementById("panel-incidents")
+const incidentList = document.getElementById("incident-list")
+const incidentTimeline = document.getElementById("incident-timeline")
 let view = "logs"; 
 let events = [];
 let honey = null;
@@ -31,7 +35,8 @@ let persist = null;
 let processData = null;
 let networkData = null;
 let controlData = null;
-
+let incidentData = null;
+let pickedIncident = null;
 function msg(event) {
   return event.message || event.massage || "";
 }
@@ -526,6 +531,60 @@ function renderControl(){
   }
 }
 
+function renderIncident(){
+  if (!incidentData || !incidentData.ok){
+    incidentMeta.textContent = "no incident data";
+    incidentList.innerHTML = 
+      '<tr><td colspan="4" class="empty">—</td></tr>';
+    incidentTimeline.textContent = "";
+    return;
+  }
+  const items = incidentData.items || [];
+  incidentMeta.textContent = items.length + " stories";
+  if (!items.length) {
+    incidentList.innerHTML = 
+      '<tr><td colspan="4" class="empty">No stories yet. need a couple alerts close together.</td></tr>';
+    incidentTimeline.textContent = "nothing yet";
+    return;
+  }
+  incidentList.innerHTML = items
+    .map((event, i) =>{
+      const on = pickedIncident && pickedIncident.time === event.time
+        && pickedIncident.massage == event.massage;
+      return (
+        '<tr class="row-alert' + (on ? " is-picked" : "") + '" data-ix="' + i + '">' +
+        "<td>" +
+        esc(fmtTime(event.time)) +
+        "</td>" +
+        "<td>" +
+        esc(msg(event)) +
+        "</td>" +
+        "<td>" +
+        esc(event.related || "") +
+        "</td>" +
+        "<td>" +
+        esc(event.image || "") +
+        "</td>" +
+        "</tr>"
+      );
+    })
+    .join("");
+  incidentList.querySelectorAll("tr[data-ix]").forEach((row) => {
+    row.addEventListener("click", () => {
+      const ix = parseInt(row.getAttribute("data-ix"), 10);
+      pickedIncident = items[ix];
+      incidentTimeline.textContent =
+        (pickedIncident && pickedIncident.timeline) || "";
+      renderIncident();
+    });
+  });
+  if (!pickedIncident && items[0]) {
+    pickedIncident = items[0];
+  }
+  if (pickedIncident && pickedIncident.timeline) {
+    incidentTimeline.textContent = pickedIncident.timeline;
+  }
+}
 function renderLogs() {
   const list = visibleEvents();
   if (!list.length) {
@@ -572,6 +631,7 @@ function render() {
     process: "Process",
     network: "Network",
     control: "Control",
+    incidents: "incidents",
   };
   viewTitle.textContent = titles[view] || "Logs";
   const showHoney = view === "honey";
@@ -579,15 +639,17 @@ function render() {
   const showProcess = view === "process";
   const showNetwork = view === "network";
   const showControl = view === "control";
+  const showIncident = view === "incidents";
   panelLogs.classList.toggle(
     "hidden",
-    showHoney || showPersist || showProcess || showNetwork || showControl
+    showHoney || showPersist || showProcess || showNetwork || showControl || showIncident
   );
   panelHoney.classList.toggle("hidden", !showHoney);
   panelPersist.classList.toggle("hidden", !showPersist);
   panelProcess.classList.toggle("hidden", !showProcess);
   panelNetwork.classList.toggle("hidden", !showNetwork);
   panelControl.classList.toggle("hidden", !showControl);
+  panelIncidents.classList.toggle("hidden", !showIncident);
   if (showHoney) {
     renderHoney();
   } else if(showPersist){
@@ -598,6 +660,8 @@ function render() {
     renderNetwork();
   } else if(showControl){
     renderControl();
+  } else if(showIncident){
+    renderIncident();
   }
   else {
     renderLogs();
@@ -614,13 +678,14 @@ function setView(next) {
 
 async function refresh() {
   try {
-    const [evRes, honeyRes, persistRes, processRes, networkRES, controlRES] = await Promise.all([
+    const [evRes, honeyRes, persistRes, processRes, networkRES, controlRES, incidentRES] = await Promise.all([
       fetch("/api/events?limit=500", { cache: "no-store" }),
       fetch("/api/honey", { cache: "no-store" }),
       fetch("/api/persistence", { cache: "no-store"}),
       fetch("/api/process", { cache: "no-store"}),
       fetch("/api/network", { cache: "no-store"}),
       fetch("/api/control", { cache: "no-store"}),
+      fetch("/api/incident", { cache: "no-store"}),
     ]);
     const data = await evRes.json();
     events = data.events || [];
@@ -629,6 +694,7 @@ async function refresh() {
     processData = await processRes.json();
     networkData = await networkRES.json();
     controlData = await controlRES.json();
+    incidentData = await incidentRES.json();
     if (view === "honey") {
       const n = (honey && honey.alerts && honey.alerts.length) || 0;
       statusLine.textContent = n + " honey alerts";
@@ -643,6 +709,10 @@ async function refresh() {
       const a = (networkData && networkData.alerts && networkData.alerts.length) || 0;
       const c = (networkData && networkData.linked && networkData.linked.length) || 0;
       statusLine.textContent = a+"network, " + c + "linked";
+    } else if(view === "incidents"){
+      const n = (incidentData && incidentData.count) || 0;
+      statusLine.textContent = n + "stories";
+
     } else {
       const logsCount = events.filter((e) => e.kind !== "heartbeat").length;
       const hbCount = events.filter((e) => e.kind === "heartbeat").length;

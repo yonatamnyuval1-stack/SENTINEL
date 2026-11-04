@@ -185,3 +185,17 @@ body{
 .mute-go:hover{
   background: #e4e4e4;
 }
+.incident-timeline{
+  margin: 0;
+  padding: 8px 10px;
+  background: #f7f7f7;
+  border: 1px solid #ccc;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow: auto;
+}
+.log-table tr.is-picked td{
+  background: #e8e8e8;
+}
