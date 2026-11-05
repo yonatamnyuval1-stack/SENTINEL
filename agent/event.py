@@ -1,4 +1,5 @@
 import json
+from notify import maybe_toast
 from datetime import datetime,timezone
 from pathlib import Path
 DATA_DIR = Path(__file__).resolve().parent / "data"
@@ -19,4 +20,5 @@ def log_event(kind,massage, **extra):
     with EVENTS_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps(event, ensure_ascii=False) + "\n")
     print(f"[{event['kind']}] {event['massage']}")
+    maybe_toast(event["kind"], event["massage"], event.get("source") or "")
     return event
