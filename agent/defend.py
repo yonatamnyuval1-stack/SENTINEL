@@ -3,6 +3,7 @@ import os
 from event import log_event
 from control import load_control
 import subprocess
+import shutil
 PROCESS_TERMINATE = 0x0001
 # don't touch these plz
 _SKIP_NAMES = (
@@ -74,6 +75,7 @@ def maybe_kill(pid, image="", why=""):
             why = str(why or ""),
             source = "defend",
         )
+        maybe_quarantine(image, why=why)
     else:
         log_event(
             "system",
@@ -275,6 +277,72 @@ def maybe_block_ip(remote_ip, remote_port="", why=""):
         remote_port=str(remote_port or ""),
         rule=rule,
         why=str(why or ""),
+        source="defend",
+    )
+    return True
+
+def _leave_it(path):
+    p = str(path or "").lower().replace("/","\\")
+    for bit in ("\\windows\\", "\\program files\\", "\\program files (x86)\\"):
+        if bit in p:
+            return True
+    return False
+
+def maybe_quarantine(image, why=""):
+    if not armed():
+        return False
+    src = Path(str(image or "").strip().strip('"'))
+    try:
+        src = src.resolve()
+    except OSError:
+        return False
+    if not src.is_file():
+        return False
+    here = Path(__file__).resolve().parent
+    if here == src or here in src.parents:
+        return False
+    if _leave_it(src):
+        log_event(
+            "system",
+            "skip quarantine (system path)",
+            image=str(src),
+            why=(why or ""),
+            source="defend",
+        )
+        return False
+    folder = here / "data" / "quarantine"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log_event(
+            "system",
+            "quarantine failed",
+            image=str(src),
+            detail=str(exc),
+            source="defend",
+        )
+        return False
+    from datetime import datetime
+    stamp = datetime.now().strftime("%H%M%S")
+    dest = folder / (src.stem + "_" + stamp + src.suffix)
+    try:
+        shutil.move(str(src), str(dest))
+    except OSError as exc:
+        log_event(
+            "system",
+            "quarantine failed",
+            image = str(src),
+            detail = str(exc),
+            why = str(why or ""),
+            source="defend",
+        )
+        return False
+    log_event(
+        "alert",
+        "quarantined file",
+        image=str(src),
+        detail=str(dest),
+        why=(why or ""),
         source="defend",
     )
     return True

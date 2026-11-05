@@ -4,6 +4,7 @@ import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from event import log_event
+from defend import maybe_kill
 
 EVENT_NS = {"e": "http://schemas.microsoft.com/win/2004/08/events/event"}
 
@@ -71,7 +72,6 @@ class AuditWatch:
         xml_text = proc.stdout.strip()
         if not xml_text:
             return
-        # wevtutil returns concatenated <Event>...</Event>
         wrapped = "<Events>" + xml_text + "</Events>"
         root = ET.fromstring(wrapped)
         for event in root.findall("e:Event", EVENT_NS):
@@ -110,10 +110,15 @@ class AuditWatch:
         log_event(
             "alert",
             "Trap file access audited",
+            pid=data.get("ProcessId") or "",
             path=obj_name,
             process=process_name,
             user=user,
             access_mask=access,
             source="windows_audit",
         )
-    
+        pid = data.get("ProcessId") or ""
+        name = process_name.replace("/", "\\").split("\\")[-1].lower()
+        if name in ("explorer.exe", "searchindexer.exe", "msmpeng.exe"):
+            return
+        maybe_kill(pid, process_name, why="honey")
