@@ -254,6 +254,7 @@ def build_control():
         "persistence": True,
         "process": True,
         "network": True,
+        "defend": False,
     }
     if CONTROL_FILE.exists():
         try:
@@ -337,6 +338,7 @@ class Handler(SimpleHTTPRequestHandler):
             "persistence": True,
             "process": True,
             "network": True,
+            "defend": False,
         }
         if CONTROL_FILE.exists():
             try:

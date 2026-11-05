@@ -7,6 +7,7 @@ from datetime import datetime,timezone
 from pathlib import Path
 from event import EVENTS_FILE, log_event
 from incident import maybe_write_incident
+from defend import maybe_kill
 DATA_DIR = Path(__file__).resolve().parent / "data"
 BASELINE_FILE = DATA_DIR / "process_baseline.json"
 CONFIG_PATH = Path(__file__).resolve().parent / "process.json"
@@ -287,6 +288,7 @@ def maybe_correlate(pid,ppid, image, parent, process_reasons, cfg, cmdline=""):
         window_seconds = window_seconds,
         why="process",
     )
+    maybe_kill(pid,image,why="correlation")
 try:
     from etw import ETW, ProviderInfo
     from etw.GUID import GUID

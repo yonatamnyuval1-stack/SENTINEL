@@ -26,6 +26,9 @@ def load_control():
     for key in DEFAULTS:
         if key in raw:
             cfg[key] = bool(raw[key])
+    cfg["defend"] = False
+    if "defend" in raw:
+        cfg["defend"] = bool(raw.get("defend"))
     muted = {}
     raw_muted = raw.get("muted_until") if isinstance(raw, dict) else None
     if isinstance(raw_muted, dict):
@@ -49,6 +52,7 @@ def save_control(cfg):
         for key in DEFAULTS:
             if key in cfg:
                 out[key] = bool(cfg[key])
+    out["defend"] = bool(cfg.get("defend", False)) if isinstance(cfg, dict) else False
     CONTROL_FILE.write_text(
         json.dumps(out, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8"

@@ -436,7 +436,7 @@ function renderControl(){
   const sw = controlData.switches || {};
   const running = controlData.running || {};
   const mutedUntil = controlData.muted_until || {};
-  const names = ["honey", "persistence", "process", "network"];
+  const names = ["honey", "persistence", "process", "network", "defend"];
   const runList = names.filter((n) => !!running[n]).join(" ") || "none";
   controlMeta.textContent =
     "agent: " +
