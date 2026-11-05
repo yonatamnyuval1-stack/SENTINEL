@@ -83,3 +83,105 @@ def maybe_kill(pid, image="", why=""):
             source = "defend",
         )
     return ok
+
+import winreg
+from pathlib import Path
+
+def maybe_revert_persistence(entry, value="", why="new"):
+    """
+    yank a new run/startup thing if defend is on.
+    skips scheduled tasks for now, those are messy.
+    """
+    if not armed():
+        return False
+    entry = str(entry or "")
+    if not entry:
+        return False
+    if entry.startswith("task:"):
+        log_event(
+            "system",
+            "skip revert(task)",
+            entry=entry,
+            why = str(why or ""),
+            source="defend",
+        )
+        return False
+    ok = False
+    detail = ""
+    if entry.startswith("startup:"):
+        path = Path(entry[len("startup:"):])
+        try:
+            if path.exists() and path.is_file():
+                path.unlink()
+                ok = True
+                detail = "deleted file"
+            else:
+                detail = "file gone already"
+        except OSError as exc:
+            detail = str(exc)
+    elif entry.startswith("run:") or entry.startswith("runonce:"):
+        if entry.startswith("runonce:"):
+            body = entry[len("runonce:") :]
+            kind = "runonce"
+        else:
+            body = entry[len("run:") :]
+            kind = "run"
+        cut = body.rfind(":")
+        if cut <= 0:
+            log_event(
+                "system",
+                "revert failed(bad entry)",
+                entry=entry,
+                source="defend",
+            )
+            return False
+        reg_path = body[:cut]
+        name = body[cut + 1 :]
+        for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                key = winreg.OpenKey(
+                    hive,
+                    reg_path,
+                    0,
+                    winreg.KEY_SET_VALUE | winreg.KEY_READ,
+                )
+            except OSError:
+                continue
+            try:
+                winreg.DeleteValue(key, name)
+                ok = True
+                detail = "deleted " + kind + " value"
+                break
+            except OSError as exc:
+                detail = str(exc)
+            finally:
+                winreg.CloseKey(key)
+    else:
+        log_event(
+            "system",
+            "skip revert (unknown kind)",
+            entry=entry,
+            source="defend",
+        )
+        return False
+    if ok:
+        log_event(
+            "alert",
+            "reverted persistence",
+            entry=entry,
+            value=str(value or ""),
+            detail=detail,
+            why=str(why or ""),
+            source="defend",
+        )
+    else:
+        log_event(
+            "system",
+            "revert failed",
+            entry=entry,
+            value=str(value or ""),
+            detail=detail,
+            why=str(why or ""),
+            source="defend",
+        )
+    return ok

@@ -3,6 +3,7 @@ import threading
 import winreg
 from pathlib import Path
 from event import log_event
+from defend import maybe_revert_persistence
 
 DATA_DIR = Path(__file__).resolve().parent/ "data"
 BASELINE_FILE = DATA_DIR/ "persistence_baseline.json"
@@ -216,6 +217,7 @@ class PersistenceWatch:
             log_event(
                 "alert",
                 "New persistence entry",
+                maybe_revert_persistence(key, now[key], why="new"),
                 entry=key,
                 value=now[key],
                 source="persistence",
