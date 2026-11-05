@@ -2,6 +2,7 @@ import ctypes
 import os
 from event import log_event
 from control import load_control
+import subprocess
 PROCESS_TERMINATE = 0x0001
 # don't touch these plz
 _SKIP_NAMES = (
@@ -185,3 +186,95 @@ def maybe_revert_persistence(entry, value="", why="new"):
             source="defend",
         )
     return ok
+def _boring_ip(ip):
+    ip = str(ip or "").strip()
+    if not ip:
+        return True
+    if ip in ("127.0.0.1", "::1", "0.0.0.0"):
+        return True
+    if ip.startswith("10."):
+        return True
+    if ip.startswith("192.168."):
+        return True
+    if ip.startswith("169.254."):
+        return True
+    if ip.startswith("172."):
+        bits = ip.split(".")
+        if len(bits) > 1:
+            try:
+                n = int(bits[1])
+            except ValueError:
+                n = -1
+            if 16 <= n <= 31:
+                return True
+    return False
+def maybe_block_ip(remote_ip, remote_port="", why=""):
+    """
+    drop outbound to this ip if defend is on.
+    needs admin sometimes or netsh just shrugs.
+    """
+    if not armed():
+        return False
+    ip = str(remote_ip or "").strip()
+    if _boring_ip(ip):
+        log_event(
+            "system",
+            "skip block (local/private ip)",
+            remote_ip=ip,
+            why = str(why or ""),
+            source= "defend",
+        )
+        return False
+    rule = "SENTINEL_block_" + ip.replace(":", "_")
+    cmd = [
+        "netsh",
+        "advfirewall",
+        "firewall",
+        "add",
+        "rule",
+        "name=" + rule,
+        "dir=out",
+        "action=block",
+        "remoteip=" + ip,
+        "enable=yes",
+    ]
+    try:
+        done = subprocess.run (
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log_event(
+            "system",
+            "block failed",
+            remote_ip=ip,
+            remote_port=str(remote_port or ""),
+            detail=str(exc),
+            why=str(why or ""),
+            source="defend",
+        )
+        return False
+    if done.returncode != 0:
+        err = (done.stderr or done.stdout or "").strip()[:200]
+        log_event(
+            "system",
+            "block failed",
+            remote_ip=ip,
+            remote_port=str(remote_port or ""),
+            detail=err or ("exit " + str(done.returncode)),
+            why=str(why or ""),
+            source="defend",
+        )
+        return False
+    log_event(
+        "alert",
+        "blocked outbound ip",
+        remote_ip=ip,
+        remote_port=str(remote_port or ""),
+        rule=rule,
+        why=str(why or ""),
+        source="defend",
+    )
+    return True
