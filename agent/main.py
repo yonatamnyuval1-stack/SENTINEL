@@ -6,6 +6,7 @@ from persistence import PersistenceWatch
 from process_watch import ProcessWatch
 from network_watch import NetworkWatch
 from control import bump_heartbeat, load_control, want_running, clear_finished_mutes
+from files_watch import FilesWatch
 def main():
     print("SENTINEL starting...")
     print("Press Ctrl+C to stop.\n")
@@ -18,6 +19,8 @@ def main():
     process.setup()
     network = NetworkWatch()
     network.setup()
+    files = FilesWatch()
+    files.setup()
     on = {
         "honey": True,
         "persistence": True,
@@ -55,6 +58,7 @@ def main():
         process.stop()
         persist.stop()
         honey.stop()
+        files.stop()
         log_event("system", "SENTINEL stopped by user")
         print("\nSENTINEL stopped.")
 if __name__ == "__main__":

@@ -714,10 +714,7 @@ async function refresh() {
       statusLine.textContent = n + "stories";
 
     } else {
-      const logsCount = events.filter((e) => e.kind !== "heartbeat").length;
-      const hbCount = events.filter((e) => e.kind === "heartbeat").length;
-      statusLine.textContent =
-        logsCount + " logs, " + hbCount + " heartbeats";
+      statusLine.textContent ="";
     }
     render();
   } catch (err) {

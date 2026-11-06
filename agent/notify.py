@@ -9,6 +9,7 @@ _OK = {
     "correlation",
     "network_corr",
     "incident",
+    "files",
 }
 def _clean(text):
     return str(text or "").replace("'", " ").replace("'", " ").replace("\n", "")[:120]
