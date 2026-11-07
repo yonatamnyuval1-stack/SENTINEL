@@ -753,29 +753,7 @@ async function refresh() {
     controlData = await controlRES.json();
     incidentData = await incidentRES.json();
     filesData = await filesRES.json();
-    if (view === "honey") {
-      const n = (honey && honey.alerts && honey.alerts.length) || 0;
-      statusLine.textContent = n + " honey alerts";
-    } else if(view === "persistence"){
-      const n = (persist && persist.alerts && persist.alerts.length) || 0;
-      statusLine.textContent = n + " persistence alerts";
-    } else if(view === "process"){
-      const a = (processData && processData.alerts && processData.alerts.length) || 0;
-      const c = (processData && processData.correlated && processData.correlated.length) || 0;
-      statusLine.textContent = a +"process, " + c + "correlated";
-    } else if(view === "network"){
-      const a = (networkData && networkData.alerts && networkData.alerts.length) || 0;
-      const c = (networkData && networkData.linked && networkData.linked.length) || 0;
-      statusLine.textContent = a+"network, " + c + "linked";
-    } else if(view === "incidents"){
-      const n = (incidentData && incidentData.count) || 0;
-      statusLine.textContent = n + "stories";
-    } else if(view === "files"){
-      const n = (filesData && filesData.alerts &&filesData.alerts.length) || 0;
-      statusLine.textContent = n + "files";
-    } else {
-      statusLine.textContent ="";
-    }
+    statusLine.textContent = "";
     render();
   } catch (err) {
     statusLine.textContent = "cannot reach server";

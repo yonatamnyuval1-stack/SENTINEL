@@ -217,11 +217,11 @@ class PersistenceWatch:
             log_event(
                 "alert",
                 "New persistence entry",
-                maybe_revert_persistence(key, now[key], why="new"),
                 entry=key,
                 value=now[key],
                 source="persistence",
             )
+            maybe_revert_persistence(key, now[key], why="new")
         for key in sorted(old_keys - new_keys):
             log_event(
                 "alert",
