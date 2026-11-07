@@ -28,10 +28,15 @@ const incidentMeta = document.getElementById("incident-meta")
 const panelIncidents = document.getElementById("panel-incidents")
 const incidentList = document.getElementById("incident-list")
 const incidentTimeline = document.getElementById("incident-timeline")
+const panelFiles = document.getElementById("panel-files")
+const filesMeta = document.getElementById("files-meta")
+const filesRows = document.getElementById("files-rows")
+const filesAlerts = document.getElementById("files-alerts")
 let view = "logs"; 
 let events = [];
 let honey = null;
 let persist = null;
+let filesData = null;
 let processData = null;
 let networkData = null;
 let controlData = null;
@@ -621,6 +626,53 @@ function renderLogs() {
     })
     .join("");
 }
+function fileDetail(event){
+  const bits = [];
+  if(event.old) bits.push("old="+event.old);
+  if(event.new) bits.push("new="+event.new);
+  if(event.value) bits.push("value="+event.value);
+  return bits.join(" | ") || detail(event);
+}
+function renderFiles(){
+  if (!filesData || !filesData.ok){
+    filesMeta.textContent = "no files data";
+    filesRows.innerHTML = '<tr><td colspan="3" class="empty">—</td></tr>';
+    filesAlerts.innerHTML = '<tr><td colspan="4" class="empty">—</td></tr>';
+    return;
+  }
+  filesMeta.textContent = 
+    (filesData.count || 0) + " files\n" +
+    "watch: " + (filesData.watch_seen ? "seen in logs" : "not seen yet");
+  const list = filesData.files || [];
+  if (!list.length){
+    filesRows.innerHTML = '<tr><td colspan="3" class="empty">No files configured.</td></tr>';
+  } else {
+    filesRows.innerHTML = list.map((row) => {
+      return(
+        "<tr>" +
+        "<td>" + esc(row.name || "") + "</td>" +
+        "<td>" + esc(row.path || "") + "</td>" +
+        "<td>" + esc(row.state || "") + "</td>" +
+        "</tr>"
+      );
+    }).join("");
+  }
+  const alerts = filesData.alerts || [];
+  if(!alerts.length){
+    filesAlerts.innerHTML = '<tr><td colspan="4" class="empty">No file alerts yet.</td></tr>';
+    return;
+  }
+  filesAlerts.innerHTML = alerts.map((event) =>{
+    return(
+      '<tr class="row-alert">' +
+      "<td>" + esc(fmtTime(event.time)) + "</td>" +
+      "<td>" + esc(msg(event)) + "</td>" +
+      "<td>" + esc(event.path || "") + "</td>" +
+      "<td>" + esc(fileDetail(event)) + "</td>" +
+      "</tr>"
+    )
+  }).join("")
+}
 
 function render() {
   const titles = {
@@ -632,6 +684,7 @@ function render() {
     network: "Network",
     control: "Control",
     incidents: "incidents",
+    files: "files",
   };
   viewTitle.textContent = titles[view] || "Logs";
   const showHoney = view === "honey";
@@ -640,9 +693,10 @@ function render() {
   const showNetwork = view === "network";
   const showControl = view === "control";
   const showIncident = view === "incidents";
+  const showFiles = view === "files";
   panelLogs.classList.toggle(
     "hidden",
-    showHoney || showPersist || showProcess || showNetwork || showControl || showIncident
+    showHoney || showPersist || showProcess || showNetwork || showControl || showIncident || showFiles
   );
   panelHoney.classList.toggle("hidden", !showHoney);
   panelPersist.classList.toggle("hidden", !showPersist);
@@ -650,6 +704,7 @@ function render() {
   panelNetwork.classList.toggle("hidden", !showNetwork);
   panelControl.classList.toggle("hidden", !showControl);
   panelIncidents.classList.toggle("hidden", !showIncident);
+  panelFiles.classList.toggle("hidden", !showFiles);
   if (showHoney) {
     renderHoney();
   } else if(showPersist){
@@ -662,7 +717,8 @@ function render() {
     renderControl();
   } else if(showIncident){
     renderIncident();
-  }
+  } else if(showFiles){
+  } 
   else {
     renderLogs();
   }
@@ -678,7 +734,7 @@ function setView(next) {
 
 async function refresh() {
   try {
-    const [evRes, honeyRes, persistRes, processRes, networkRES, controlRES, incidentRES] = await Promise.all([
+    const [evRes, honeyRes, persistRes, processRes, networkRES, controlRES, incidentRES,filesRES] = await Promise.all([
       fetch("/api/events?limit=500", { cache: "no-store" }),
       fetch("/api/honey", { cache: "no-store" }),
       fetch("/api/persistence", { cache: "no-store"}),
@@ -686,6 +742,7 @@ async function refresh() {
       fetch("/api/network", { cache: "no-store"}),
       fetch("/api/control", { cache: "no-store"}),
       fetch("/api/incident", { cache: "no-store"}),
+      fetch("/api/files", { cache: "no-store"}),
     ]);
     const data = await evRes.json();
     events = data.events || [];
@@ -695,6 +752,7 @@ async function refresh() {
     networkData = await networkRES.json();
     controlData = await controlRES.json();
     incidentData = await incidentRES.json();
+    filesData = await filesRES.json();
     if (view === "honey") {
       const n = (honey && honey.alerts && honey.alerts.length) || 0;
       statusLine.textContent = n + " honey alerts";
@@ -712,7 +770,9 @@ async function refresh() {
     } else if(view === "incidents"){
       const n = (incidentData && incidentData.count) || 0;
       statusLine.textContent = n + "stories";
-
+    } else if(view === "files"){
+      const n = (filesData && filesData.alerts &&filesData.alerts.length) || 0;
+      statusLine.textContent = n + "files";
     } else {
       statusLine.textContent ="";
     }

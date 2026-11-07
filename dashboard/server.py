@@ -10,6 +10,8 @@ PROCESS_BASELINE = ROOT.parent / "agent" / "data" / "process_baseline.json"
 NETWORK_BASELINE = ROOT.parent / "agent" / "data" / "network_baseline.json"
 CONTROL_FILE =  ROOT.parent / "agent" / "data" / "control.json"
 HEARTBEAT_FILE = ROOT.parent / "agent" / "data" / "agent_heartbeat.json"
+FILES_JSON = ROOT.parent / "agent" / "files.json"
+FILES_BASELINE = ROOT.parent / "agent" / "data" / "files_baseline.json"
 HOST = "127.0.0.1"
 PORT = 8787
 def read_events(limit=200):
@@ -130,7 +132,70 @@ def build_persistence():
         "alert_counts": counts,
         "alerts": alerts,
     }
-
+def _files_stamp(path):
+    p = Path(path)
+    try:
+        if not p.exists():
+            return "missing"
+        st = p.stat()
+        return str(st.st_size) + "|" + str(st.st_mtime_ns)
+    except OSError:
+        return "unreadable"
+def build_files():
+    paths = []
+    if FILES_JSON.exists():
+        try:
+            raw = json.loads(FILES_JSON.read_text(encoding="utf-8"))
+            got = raw.get("paths")
+            if isinstance(got, list):
+                paths = [str(p) for p in got if str(p).strip()]
+        except (OSError, json.JSONDecodeError):
+            paths = []
+    base = {}
+    if FILES_BASELINE.exists():
+        try:
+            raw = json.loads(FILES_BASELINE.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                base = raw
+        except (OSError, json.JSONDecodeError):
+            base = {}
+    rows = []
+    for path in paths:
+        cur = _files_stamp(path)
+        old = base.get(path)
+        if old is None:
+            state = "?"
+        elif cur == "missing":
+            state = "missing"
+        elif cur != old:
+            state = "changed"
+        else:
+            state = "ok"
+        rows.append({
+            "name": Path(path).name or path,
+            "path": path,
+            "state": state,
+        })
+    alerts = []
+    watch_seen = False
+    for event in read_events(limit=1200):
+        text = event.get("message") or event.get("massage") or ""
+        if event.get("kind") == "system" and "files watch started" in text:
+            watch_seen = True
+        if event.get("kind") != "alert":
+            continue
+        if event.get("source") != "files":
+            continue
+        if len(alerts) >= 40:
+            break
+        alerts.append(event)
+    return {
+        "ok": True,
+        "watch_seen": watch_seen,
+        "count": len(rows),
+        "files": rows,
+        "alerts": alerts,
+    }
 def build_process():
     mode = None
     images = 0
@@ -318,6 +383,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(build_control())
         if parsed.path == "/api/incident":
             return self._json(build_incident())
+        if parsed.path == "/api/files":
+            return self._json(build_files())
         if parsed.path == "/":
             self.path = "/index.html"
         return super().do_GET()

@@ -19,6 +19,7 @@
         <button type="button" class="nav-item" data-view="network">Network</button>
         <button type="button" class="nav-item" data-view="control">Control</button>
         <button type="button" class="nav-item" data-view="incidents">Incidents</button>
+        <button type="button" class="nav-item" data-view="files">Files</button>
       </nav>
     </aside>
     <section class="main">
@@ -99,6 +100,36 @@
           </thead>
           <tbody id="persist-alerts">
             <tr><td colspan="4" class="empty">No persistence alert yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="panel-files" class="hidden">
+        <div class="honey-meta" id="files-meta">—</div>
+        <h2 class="block-title">Watched</h2>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Path</th>
+              <th>State</th>
+            </tr>
+          </thead>
+          <tbody id="files-rows">
+            <tr><td colspan="3" class="empty">No files.</td></tr>
+          </tbody>
+        </table>
+        <h2 class="block-title">File alerts</h2>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Massage</th>
+              <th>Path</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody id="files-alerts">
+            <tr><td colspan="4" class="empty">No file alerts yet.</td></tr>
           </tbody>
         </table>
       </div>
