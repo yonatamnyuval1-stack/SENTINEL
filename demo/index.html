@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SENTINEL demo</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Tahoma,'Segoe UI', sans-serif;
+            font-size: 14px;
+            color: #222;
+            background: #f4f4f4;
+        }
+        .wrap {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px 16px 40px;
+        }
+        h1 {
+            font-size: 20px;
+            margin: 0 0 8px;
+        }
+        .intro {
+            color: #444;
+            margin-bottom: 24px;
+            line-height: 1.4;
+        }
+        .shot {
+            margin-bottom: 28px;
+            background: #fff;
+            border: 1px solid #bbb;
+            padding: 12px;
+        }
+        .shot h2{
+            font-size: 15px;
+            margin: 0 0 6px;
+        }
+        .shot p{
+            margin: 0 0 10px;
+            color: #555;
+            font-size: 13px;
+        }
+        .shot img{
+            width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+            display: block;
+        }
+    </style>                    
+  </head>
+<body>
+    <div class="wrap">
+        <h1>SENTINEL</h1>
+        <p class="intro">
+          quick walkthrough of the local windows host monitor.
+          agent + dashboard on localhost. these are real screens from a running build.
+        </p>
+    <div class="shot">
+        <h2>1. agent running</h2>
+        <p>python main.py. watchers start, then it sits here</p>
+        <img src="01-terminal.png" alt="agent terminal" />
+    </div>
+    <div class="shot">
+      <h2>2. logs</h2>
+      <p>everything lands here. alerts show up in red.</p>
+      <img src="02-logs.png" alt="logs page" />
+    </div>
+    <div class="shot">
+      <h2>3. honeyfiles</h2>
+      <p>trap files + fillers on disk</p>
+      <img src="03-honeyfiles.png" alt="honeyfiles page" />
+    </div>
+    <div class="shot">
+      <h2>4. persistence</h2>
+      <p>run / startup / tasks changes.</p>
+      <img src="04-persistence.png" alt="persistence page" />
+    </div>
+    <div class="shot">
+      <h2>5. process</h2>
+      <p>process watch + correlated alerts (empty here, thats fine).</p>
+      <img src="05-process.png" alt="process page" />
+    </div>
+    <div class="shot">
+      <h2>6. network</h2>
+      <p>outbound paths it hasnt seen before.</p>
+      <img src="06-network.png" alt="network page" />
+    </div>
+    <div class="shot">
+      <h2>7. files</h2>
+      <p>watched files page. list comes from files.json.</p>
+      <img src="07-files.png" alt="files page" />
+    </div>
+        <div class="shot">
+      <h2>8. control</h2>
+      <p>turn watchers on/off. defend stays off unless you want it.</p>
+      <img src="08-control.png" alt="control page" />
+    </div>
+  </div>
+</body>
+</html>
