@@ -29,6 +29,9 @@ ahh, yes, and it's 100% local
 
 ## how to run
 
+easiest: grab the Windows installer from Releases (SENTINEL_0.1.0.exe), install, then run SENTINEL from the start menu. it starts the agent and opens the dashboard.
+
+from source:
 pip install -r requirements.txt
 to run the agent: just use python main.py from the agent folder
 to run the dashboard: use python server.py from the dashboard folder
@@ -36,6 +39,10 @@ the dashboard runs locally on this address by default: http://127.0.0.1:8787
 and install_startup.bat is optional
 to start defend, use the button in control page in the dashboard
 some of these will work better if you run as administrator
+
+to rebuild the installer yourself (needs NSIS + pynsist):
+python -m nsist installer.cfg
+the exe lands in build/nsis/
 
 ## screenshots
 honeyfiles page:
