@@ -28,7 +28,10 @@ some libraries from requirements.txt
 ahh, yes, and it's 100% local 
 
 ## how to run
-
+easiest way: download SENTINEL_0.1.0.exe from Releases, install it, then open SENTINEL from the start menu. it starts the agent + dashboard.
+if you want to build the installer again you need NSIS and pynsist, then:
+python -m nsist installer.cfg
+it shows up in build/nsis/
 pip install -r requirements.txt
 to run the agent: just use python main.py from the agent folder
 to run the dashboard: use python server.py from the dashboard folder
